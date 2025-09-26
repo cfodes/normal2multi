@@ -1,0 +1,19 @@
+# VSCode 配置
+.vscode/
+.cache/
+
+# CMake 构建目录
+build/
+
+# 编译产物
+*.o
+*.obj
+*.exe
+*.out
+*.log
+
+# 其他不需要上传的
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
