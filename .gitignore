@@ -13,6 +13,7 @@ build/
 *.log
 
 # 其他不需要上传的
+CMakeLists.txt
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
