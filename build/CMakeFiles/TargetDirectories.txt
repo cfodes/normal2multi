@@ -1,3 +1,0 @@
-/home/oujc/code/normal2multi/build/CMakeFiles/MyProject.dir
-/home/oujc/code/normal2multi/build/CMakeFiles/edit_cache.dir
-/home/oujc/code/normal2multi/build/CMakeFiles/rebuild_cache.dir
