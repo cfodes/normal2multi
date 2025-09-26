@@ -1,7 +1,5 @@
 #pragma once
 #include <vector>
-#include <unordered_map>
-#include <unordered_set>
 #include <metis.h>
 #include "geometry.hpp"
 

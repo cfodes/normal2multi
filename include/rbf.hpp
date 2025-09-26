@@ -77,10 +77,16 @@ public:
 class DeformCalculator
 {
 private:
-    const RBFInterpolator& rbf;
+    RBFInterpolator& rbf;
 
 public:
-    explicit DeformCalculator(const RBFInterpolator& r): rbf(r) {}
+    explicit DeformCalculator(RBFInterpolator& r): rbf(r) {}
+
+    // 获取rbf对象的引用
+    RBFInterpolator& get_rbf_mutable() { return rbf; }
+
+    // 不可改变的rbf对象引用
+    const RBFInterpolator& get_rbf() const { return rbf; }
 
     // 计算所有节点的变形（纯RBF）
     void calculate_deform(std::vector<Node>& every_nodes, const State& S) const;

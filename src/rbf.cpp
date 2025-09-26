@@ -294,9 +294,8 @@ void DeformCalculator::calculate_deform_DRRBF(Node& inode, double d_r2omega1, do
 
 
 void set_block_rbf(std::vector<DeformCalculator>& block_rbf, const std::vector<mesh_block>& blocks);
-// 根据网格块组生成每个网格块的rbf插值系统的支撑点集
-// 传入参数：每个网格块的插值系统 block_rbf
-//          网格块组 blocks
+// 生成每个网格块的 RBF 插值系统支撑点集
+// - block_rbf[i] 对应 blocks[i]
+// - 支撑点包括：该块的内部点 + 在 block_D 覆盖范围内的其它块内部点和边界点
 {
-    
 }
