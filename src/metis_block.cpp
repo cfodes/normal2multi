@@ -1,14 +1,16 @@
 #include "metis_block.hpp"
 #include "block.hpp"
 #include <unordered_set>
+#include <unordered_map>
 #include <iostream>
 #include <cassert>
+#include <cstdlib> //exit
 
 using namespace std;
 
 // ====================== 构造函数 ======================
 // 构造函数，默认分区数k为2（传入边界进行构造）
-explicit metis_block::metis_block(const boundary &b, const std::vector<Node> &wall_nodes, idx_t k = 2)
+metis_block::metis_block(const boundary &b, const std::vector<Node> &wall_nodes, idx_t k)
 {
     // 参数设置
     m_k = k;
@@ -58,7 +60,7 @@ explicit metis_block::metis_block(const boundary &b, const std::vector<Node> &wa
 }
 
 // 构造函数，默认分区数k为2（传入单元进行构造）
-explicit metis_block::metis_block(const std::vector<element> &b, const std::vector<Node> &wall_nodes, idx_t k = 2)
+metis_block::metis_block(const std::vector<element> &b, const std::vector<Node> &wall_nodes, idx_t k)
 {
     // 参数设置
     m_k = k;
@@ -109,7 +111,7 @@ explicit metis_block::metis_block(const std::vector<element> &b, const std::vect
 
 // ====================== METIS 分区函数 ======================
 // 使用metis函数进行分区，默认边共享ncommon=2
-void metis_block::partitionMeshDual(idx_t ncommon = 2)
+void metis_block::partitionMeshDual(idx_t ncommon)
 {
     assert(ne > 0); // 不允许传入空的单元
     m_epart.resize(ne);
