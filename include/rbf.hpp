@@ -1,10 +1,11 @@
 #pragma once
 
 #include "State.hpp"
+#include "block.hpp"
 #include <vector>
 #include <Eigen/Dense>
 
-class mesh_block; //前置声明
+
 
 // rbf基函数定义：Wendland's C2 function
 inline double rbf_func_Wendland(double eta, double R)
@@ -85,7 +86,7 @@ public:
     // 获取rbf对象的引用
     RBFInterpolator& get_rbf_mutable() { return rbf; }
 
-    // 不可改变的rbf对象引用
+    // 只读的rbf对象
     const RBFInterpolator& get_rbf() const { return rbf; }
 
     // 计算所有节点的变形（纯RBF）

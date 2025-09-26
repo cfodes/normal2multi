@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <fstream>
+#include <unordered_set>
 using namespace std;
 
 //====================== RBFInterpolator 类实现======================
@@ -217,7 +218,7 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
 }
 
 // 贪心算法误差输出至文件查看
-void RBFInterpolator::write_greedy_tol(const std::string& filename)
+void RBFInterpolator::write_greedy_tol(const std::string &filename)
 {
     std::ofstream outfile(filename);
     if (!outfile.is_open())
@@ -243,28 +244,28 @@ void RBFInterpolator::write_greedy_tol(const std::string& filename)
 }
 
 //====================== DeformCalculator ======================
-void DeformCalculator::calculate_deform(std::vector<Node>& every_nodes, const State& S) const
+void DeformCalculator::calculate_deform(std::vector<Node> &every_nodes, const State &S) const
 // 计算所有节点的变形（纯RBF）
 // 传入参数：所有节点 every_nodes
 //          参数结构体 S
 //          S包括数据: R
 {
-    for(auto& node : every_nodes)
+    for (auto &node : every_nodes)
     {
         calculate_deform_RBF(node, S);
     }
 }
 
-void DeformCalculator::calculate_deform_RBF(Node& inode, const State& S) const
+void DeformCalculator::calculate_deform_RBF(Node &inode, const State &S) const
 // 计算单个节点的变形（纯RBF）
 // 传入参数：单个节点 inode
 //          参数结构体 S
 //          S包括数据: R
 {
     Eigen::Vector3d df_ij{0, 0, 0};
-    for(int j = 0; j < rbf.suppoints.size(); ++j)
+    for (int j = 0; j < rbf.suppoints.size(); ++j)
     {
-        for(int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
+        for (int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
         {
             df_ij[k] += rbf.coeff[k][j] * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R); // 第i个空间节点在第j个支撑点上第k个空间维度上的变形值
         }
@@ -272,7 +273,7 @@ void DeformCalculator::calculate_deform_RBF(Node& inode, const State& S) const
     inode.df = df_ij; // 计算得到的变形量
 }
 
-void DeformCalculator::calculate_deform_DRRBF(Node& inode, double d_r2omega1, double d_r2omega2, const State& S) const
+void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, double d_r2omega2, const State &S) const
 // 计算单个节点的变形（RRBF）
 // 传入参数：单个节点 inode
 //          待插值点到动边界的距离 d_r2omega1
@@ -280,22 +281,84 @@ void DeformCalculator::calculate_deform_DRRBF(Node& inode, double d_r2omega1, do
 //          参数结构体 S
 //          S包括数据: alpha, beta, D, R
 {
-    Eigen::Vector3d df_ij{0, 0, 0}; 
-    for(int j = 0; j < rbf.suppoints.size(); ++j)
+    Eigen::Vector3d df_ij{0, 0, 0};
+    for (int j = 0; j < rbf.suppoints.size(); ++j)
     {
-        for(int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
+        for (int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
         {
-            if(d_r2omega1 > S.D) continue; // 超过限制半径就直接为0
+            if (d_r2omega1 > S.D)
+                continue; // 超过限制半径就直接为0
             df_ij[k] += rbf.coeff[k][j] * psi(d_r2omega1, d_r2omega2, S) * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R);
         }
     }
     inode.df = df_ij; // 计算得到的变形量
 }
 
-
-void set_block_rbf(std::vector<DeformCalculator>& block_rbf, const std::vector<mesh_block>& blocks);
-// 生成每个网格块的 RBF 插值系统支撑点集
+void set_block_rbf(std::vector<DeformCalculator> &block_rbf, const std::vector<mesh_block> &blocks)
+// =====================================================
+// 生成每个网格块的 RBF 插值系统候选支撑点集 external_suppoints
 // - block_rbf[i] 对应 blocks[i]
-// - 支撑点包括：该块的内部点 + 在 block_D 覆盖范围内的其它块内部点和边界点
+// - external_suppoints 包括：
+//   * 该块的所有内部点
+//   * 在 block_D 覆盖范围内的其它块内部点和边界点
+// =====================================================
 {
+    // 临时变量
+    double d_temp = 0.0;
+    double d_r2omgea_temp = 0.0;
+    int key_temp = 0;
+
+    // 遍历每个网格块
+    for (int i = 0; i < blocks.size(); ++i)
+    {
+        const auto &blk = blocks[i];                           // 当前块
+        RBFInterpolator &rbf = block_rbf[i].get_rbf_mutable(); // 当前块的 RBF 插值系统
+
+        std::unordered_set<int> nodes_id_set; // 用于存储支撑点的唯一 ID
+        d_temp = blk.block_D;                 // 当前块的支撑距离
+
+        // 遍历所有分区
+        for (int j = 0; j < blocks.size(); ++j)
+        {
+            for (const auto &nd : blocks[j].internal_nodes) // 遍历分区j的所有内部节点
+            {
+                if (j == i)
+                {
+                    // 自己分区的内部节点，直接加入
+                    rbf.external_suppoints.push_back(nd);
+                    nodes_id_set.insert(nd.id);
+                }
+                else
+                {
+                    // 其他分区的内部节点
+                    if (nodes_id_set.find(nd.id) == nodes_id_set.end()) // 如果该节点ID不在集合中
+                    {
+                        blk.block_tree.search(d_r2omgea_temp, key_temp, nd.point); // 查询该节点到当前块的最小距离
+                        if (d_r2omgea_temp <= d_temp)                              // 如果距离小于等于支撑距离
+                        {
+                            Node nd_copy = nd;                         // 复制节点
+                            nd_copy.df.setZero();                      // 将变形量设为零(其他分区为静止边界)
+                            rbf.external_suppoints.push_back(nd_copy); // 加入支撑点集
+                            nodes_id_set.insert(nd.id);                // 将节点ID加入集合
+                        }
+                    }
+                }
+            }
+
+            for (const auto &nd : blocks[j].boundary_nodes) // 遍历分区j的所有边界节点
+            {
+                if (nodes_id_set.find(nd.id) == nodes_id_set.end()) // 如果该节点ID不在集合中
+                {
+                    blk.block_tree.search(d_r2omgea_temp, key_temp, nd.point); // 查询该节点到当前块的最小距离
+                    if (d_r2omgea_temp <= d_temp)                              // 如果距离小于等于支撑距离
+                    {
+                        Node nd_copy = nd; // 复制节点
+                        nd_copy.df.setZero(); // 将变形量设为零
+                        rbf.external_suppoints.push_back(nd_copy); // 加入支撑点集
+                        nodes_id_set.insert(nd.id);                // 将节点ID加入集合
+                    }
+                }
+            }
+        }
+    }
 }
