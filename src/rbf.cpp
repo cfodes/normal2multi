@@ -1,4 +1,5 @@
 #include "rbf.hpp"
+#include "block.hpp"
 #include "State.hpp"
 #include "deformation.hpp"
 #include <cmath>
@@ -294,69 +295,145 @@ void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, do
     inode.df = df_ij; // 计算得到的变形量
 }
 
-void set_block_rbf(std::vector<DeformCalculator> &block_rbf, const std::vector<mesh_block> &blocks)
-// =====================================================
-// 生成每个网格块的 RBF 插值系统候选支撑点集 external_suppoints
-// - block_rbf[i] 对应 blocks[i]
-// - external_suppoints 包括：
-//   * 该块的所有内部点
-//   * 在 block_D 覆盖范围内的其它块内部点和边界点
-// =====================================================
+// ------------------------------------------------------------
+// 重载 1：使用 unique_bndry 作为每块的“内部核心候选”
+// external_suppoints = 本块 unique_bndry
+//                    + 以 block_D 覆盖到的其他块 internal_nodes / boundary_nodes（df 置 0）
+// ------------------------------------------------------------
+void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
+                   const std::vector<std::vector<Node>>& unique_bndry,
+                   const std::vector<mesh_block>& blocks)
 {
-    // 临时变量
-    double d_temp = 0.0;
-    double d_r2omgea_temp = 0.0;
-    int key_temp = 0;
+    // 基本一致性检查
+    if (block_rbf.size() != blocks.size() || unique_bndry.size() != blocks.size()) {
+        std::cerr << "[set_block_rbf(unique_bndry)] size mismatch: rbfs="
+                  << block_rbf.size() << ", unique_bndry=" << unique_bndry.size()
+                  << ", blocks=" << blocks.size() << std::endl;
+        std::abort();
+    }
 
-    // 遍历每个网格块
-    for (int i = 0; i < blocks.size(); ++i)
+    double d_temp = 0.0;        // 当前块的 block_D
+    double d_near = 0.0;        // 最近距离
+    int    key_tmp = 0;         // 树查询返回的 id 占位
+
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
     {
-        const auto &blk = blocks[i];                           // 当前块
-        RBFInterpolator &rbf = block_rbf[i].get_rbf_mutable(); // 当前块的 RBF 插值系统
+        const auto& blk_i = blocks[i];              //获取当前的网格块
+        auto& rbf = block_rbf[i].get_rbf_mutable();  //获取当前网格块对应的RBF对象
 
-        std::unordered_set<int> nodes_id_set; // 用于存储支撑点的唯一 ID
-        d_temp = blk.block_D;                 // 当前块的支撑距离
+        // 清空旧的候选集，避免多次调用累积
+        rbf.external_suppoints.clear();
 
-        // 遍历所有分区
-        for (int j = 0; j < blocks.size(); ++j)
+        std::unordered_set<int> used_ids;   // 加入插值系统的待支撑点(external points)的查找集，用于确保点是唯一的（去重）
+        d_temp = blk_i.block_D;             // 设置当前block[i]的覆盖范围
+
+        // 1) 本块的 unique_bndry 直接加入（保留其 df）
+        for (const auto& nd : unique_bndry[i]) 
         {
-            for (const auto &nd : blocks[j].internal_nodes) // 遍历分区j的所有内部节点
+            if (used_ids.insert(nd.id).second)    //将已插入的点放入查找集里，若点已存在则该条件为否
             {
-                if (j == i)
+                rbf.external_suppoints.push_back(nd);  //向RBF系统插入该网格块的unique_bndry点
+            }
+        }
+
+        // 2) 其它块被 block_D 覆盖到的 internal / boundary
+        for (int j = 0; j < static_cast<int>(blocks.size()); ++j) 
+        {
+            if (j == i) continue; // 自己的 unique 已经在上一步加入
+
+            // 2.1 internal
+            for (const auto& nd : blocks[j].internal_nodes) //检查内部点
+            {
+                blk_i.block_tree.search(d_near, key_tmp, nd.point);  //查找当前点到blocks[i]的最小距离
+                if (d_near <= d_temp && used_ids.insert(nd.id).second)        //这个点被该网格块的block_D形成的圆覆盖，且不在查找集内则插入
                 {
-                    // 自己分区的内部节点，直接加入
-                    rbf.external_suppoints.push_back(nd);
-                    nodes_id_set.insert(nd.id);
-                }
-                else
-                {
-                    // 其他分区的内部节点
-                    if (nodes_id_set.find(nd.id) == nodes_id_set.end()) // 如果该节点ID不在集合中
-                    {
-                        blk.block_tree.search(d_r2omgea_temp, key_temp, nd.point); // 查询该节点到当前块的最小距离
-                        if (d_r2omgea_temp <= d_temp)                              // 如果距离小于等于支撑距离
-                        {
-                            Node nd_copy = nd;                         // 复制节点
-                            nd_copy.df.setZero();                      // 将变形量设为零(其他分区为静止边界)
-                            rbf.external_suppoints.push_back(nd_copy); // 加入支撑点集
-                            nodes_id_set.insert(nd.id);                // 将节点ID加入集合
-                        }
-                    }
+                    Node nd_copy = nd;
+                    nd_copy.df.setZero();                   // 他块视作静止
+                    rbf.external_suppoints.push_back(nd_copy);
                 }
             }
 
-            for (const auto &nd : blocks[j].boundary_nodes) // 遍历分区j的所有边界节点
+            // 2.2 boundary
+            for (const auto& nd : blocks[j].boundary_nodes) //检查边界点
             {
-                if (nodes_id_set.find(nd.id) == nodes_id_set.end()) // 如果该节点ID不在集合中
+                blk_i.block_tree.search(d_near, key_tmp, nd.point);  //查找当前点到blocks[i]的最小距离
+                if (d_near <= d_temp && used_ids.insert(nd.id).second)     //这个点被该网格块的block_D形成的圆覆盖，且不在查找集内则插入
                 {
-                    blk.block_tree.search(d_r2omgea_temp, key_temp, nd.point); // 查询该节点到当前块的最小距离
-                    if (d_r2omgea_temp <= d_temp)                              // 如果距离小于等于支撑距离
-                    {
-                        Node nd_copy = nd; // 复制节点
-                        nd_copy.df.setZero(); // 将变形量设为零
-                        rbf.external_suppoints.push_back(nd_copy); // 加入支撑点集
-                        nodes_id_set.insert(nd.id);                // 将节点ID加入集合
-                    }
+                    Node nd_copy = nd;
+                    nd_copy.df.setZero();    // 他块视作静止
+                    rbf.external_suppoints.push_back(nd_copy);
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// 重载 2：仅依据各块 own internal + block_D 扫入其它块的 internal/boundary
+// external_suppoints = 本块 internal（保留 df）
+//                    + 以 block_D 覆盖到的所有块 boundary（含本块）df=0
+//                    + 以 block_D 覆盖到的其它块 internal df=0
+// ------------------------------------------------------------
+void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
+                   const std::vector<mesh_block>& blocks)
+{
+    if (block_rbf.size() != blocks.size()) {
+        std::cerr << "[set_block_rbf(blocks)] size mismatch: rbfs="
+                  << block_rbf.size() << ", blocks=" << blocks.size() << std::endl;
+        std::abort();
+    }
+
+    double d_temp = 0.0;  // block_D
+    double d_near = 0.0;  // 最近距离
+    int    key_tmp = 0;   // 树查询返回的 id 占位
+
+    for (int i = 0; i < static_cast<int>(blocks.size()); ++i)
+    {
+        const auto& blk_i = blocks[i];            //获取当前的网格块
+        auto& rbf = block_rbf[i].get_rbf_mutable(); //获取当前网格块对应的RBF对象
+
+        // 清空旧的候选集，避免多次调用累积
+        rbf.external_suppoints.clear();
+
+        std::unordered_set<int> used_ids;
+        d_temp = blk_i.block_D;
+
+        // 1) 自己块的 internal 直接加入（保留 df）
+        for (const auto& nd : blocks[i].internal_nodes) 
+        {
+            if (used_ids.insert(nd.id).second)    //将已插入的点放入查找集里，若点已存在则该条件为否
+            {
+                rbf.external_suppoints.push_back(nd);
+            }
+        }
+
+        // 2) 所有块的 boundary，如果被覆盖则加入（包含本块 boundary）
+        for (int j = 0; j < static_cast<int>(blocks.size()); ++j) 
+        {
+            for (const auto& nd : blocks[j].boundary_nodes)  //检查边界点
+            {
+                blk_i.block_tree.search(d_near, key_tmp, nd.point);   //查找当前点到blocks[i]的最小距离
+                if (d_near <= d_temp && used_ids.insert(nd.id).second)     //这个点被该网格块的block_D形成的圆覆盖，且不在查找集内则插入
+                {
+                    Node nd_copy = nd;
+                    nd_copy.df.setZero();                 // 边界默认静止
+                    rbf.external_suppoints.push_back(nd_copy);
+                }
+            }
+        }
+
+        // 3) 其它块的 internal，如果被覆盖则加入（df=0）
+        for (int j = 0; j < static_cast<int>(blocks.size()); ++j) 
+        {
+            if (j == i) continue;
+            for (const auto& nd : blocks[j].internal_nodes)  //检查内部点
+            {
+                blk_i.block_tree.search(d_near, key_tmp, nd.point);   //查找当前点到blocks[i]的最小距离
+                if (d_near <= d_temp && used_ids.insert(nd.id).second)   //这个点被该网格块的block_D形成的圆覆盖，且不在查找集内则插入
+                {
+                    Node nd_copy = nd;
+                    nd_copy.df.setZero();
+                    rbf.external_suppoints.push_back(nd_copy);
                 }
             }
         }

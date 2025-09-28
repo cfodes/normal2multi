@@ -18,7 +18,7 @@ public:
     // 传入每层分区数，例如 {4,3,2}
     explicit multi_partition(const std::vector<idx_t>& parts_per_level);
 
-    // 设置节点等级映射（可选）
+    // 设置节点等级映射，用于加速网格DRRBF变形
     void set_m_nd2wall_lvl_mp(const std::unordered_map<int, int>& nd2wall_lvl);
 
     // 对边界单元 elems 和 wall_nodes 进行多级分区
@@ -100,15 +100,6 @@ private:
     // 第 1 层及以上：建立每块 RBF 系统
     void build_multiple_rbf_systems(double tol, const State& S, size_t lvl);
 
-    // 依据各块的 internal / boundary + block_D作为“本块的核心候选”
-    void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
-                       const std::vector<mesh_block>& blocks);
-
-    // 使用每块的 unique_bndry 作为“本块的核心候选”，再用 block_D 扫入其它块内/边界点
-    void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
-                   const std::vector<std::vector<Node>>& unique_bndry,
-                   const std::vector<mesh_block>& blocks);
-
     // 第 0 层：纯 RBF
     void apply_simple_rbf_deformation(std::vector<Node>& coords,
                                       const State& S, size_t lvl);
@@ -134,10 +125,10 @@ private:
 
     // 查询某个点到“动边界”和“静边界”的距离
     void find_moving_and_static_bndry(const Node& ind,
-                                      const std::vector<mesh_block>& blocks,
-                                      int lvl,
-                                      int& i_id,
-                                      double& i_d_r2omega1,
-                                      double& i_d_r2omega2) const;
+                                  const std::vector<mesh_block>& blocks,
+                                  int& i_id,
+                                  double& i_d_r2omega1,
+                                  double& i_d_r2omega2) const;
+
 
 };

@@ -102,5 +102,11 @@ public:
     
 };
 
-//根据网格块组生成每个网格块的rbf插值系统的支撑点集
+// 重载1：使用每块的 unique_bndry 作为“本块的核心候选”，再用 block_D 扫入其它块内/边界点
+void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
+                   const std::vector<std::vector<Node>>& unique_bndry,
+                   const std::vector<mesh_block>& blocks);
+
+// 重载2：仅依据各块的 internal / boundary + block_D扫入的其他块内/边界点作为“本块的核心候选”
 void set_block_rbf(std::vector<DeformCalculator>& block_rbf, const std::vector<mesh_block>& blocks);
+
