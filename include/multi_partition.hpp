@@ -66,7 +66,7 @@ private:
 
     // wall id <-> index
     std::unordered_map<int, int> wall_id2nodes_;
-    // 节点等级映射（可选）
+    // 节点等级映射，用于加速网格DRRBF变形
     std::unordered_map<int, int> m_nd2wall_lvl_mp_;
 
     // 前置构建：unique 边界到分区编号的映射（按层存）
@@ -100,6 +100,15 @@ private:
     // 第 1 层及以上：建立每块 RBF 系统
     void build_multiple_rbf_systems(double tol, const State& S, size_t lvl);
 
+    // 依据各块的 internal / boundary + block_D作为“本块的核心候选”
+    void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
+                       const std::vector<mesh_block>& blocks);
+
+    // 使用每块的 unique_bndry 作为“本块的核心候选”，再用 block_D 扫入其它块内/边界点
+    void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
+                   const std::vector<std::vector<Node>>& unique_bndry,
+                   const std::vector<mesh_block>& blocks);
+
     // 第 0 层：纯 RBF
     void apply_simple_rbf_deformation(std::vector<Node>& coords,
                                       const State& S, size_t lvl);
@@ -130,4 +139,5 @@ private:
                                       int& i_id,
                                       double& i_d_r2omega1,
                                       double& i_d_r2omega2) const;
+
 };
