@@ -58,7 +58,7 @@ void RBFInterpolator::calculate_df(const vector<Eigen::VectorXd> &coeff, const v
     }
 }
 
-// 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统还没有设置external_suppoints的情况
+// 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统设置external_suppoints的情况
 void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统已设置external_suppoints的情况
                                                                    // 传入参数：误差 tol
                                                                    //          参数结构体 S
@@ -138,7 +138,7 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
     }
 }
 
-// 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统已设置external_suppoints的情况
+// 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统还没有设置external_suppoints的情况
 void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, double tol, const State &S)
 // 传入参数：物面节点 _wall_nodes
 //          误差 tol
@@ -274,22 +274,23 @@ void DeformCalculator::calculate_deform_RBF(Node &inode, const State &S) const
     inode.df = df_ij; // 计算得到的变形量
 }
 
-void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, double d_r2omega2, const State &S) const
+void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, double d_r2omega2, double D, const State &S) const
 // 计算单个节点的变形（RRBF）
 // 传入参数：单个节点 inode
 //          待插值点到动边界的距离 d_r2omega1
 //          待插值点到静止边界的距离 d_r2omega2
+//          限制半径 D
 //          参数结构体 S
-//          S包括数据: alpha, beta, D, R
+//          S包括数据: alpha, beta,  R
 {
     Eigen::Vector3d df_ij{0, 0, 0};
     for (int j = 0; j < rbf.suppoints.size(); ++j)
     {
         for (int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
         {
-            if (d_r2omega1 > S.D)
+            if (d_r2omega1 > D)
                 continue; // 超过限制半径就直接为0
-            df_ij[k] += rbf.coeff[k][j] * psi(d_r2omega1, d_r2omega2, S) * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R);
+            df_ij[k] += rbf.coeff[k][j] * psi(d_r2omega1, d_r2omega2, D, S) * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R);
         }
     }
     inode.df = df_ij; // 计算得到的变形量

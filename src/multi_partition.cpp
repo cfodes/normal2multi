@@ -216,6 +216,18 @@ multi_partition::query_unique_bndry2blkid(size_t lvl, int nd_id) const
 }
 
 // ===== 内部工具 =====
+// 构建物面的索引和id查找集
+void multi_partition::set_wall_id2nodes(std::unordered_map<int, int>& wall_id2nd,
+                       const std::vector<Node>& wall_nodes) 
+{
+  wall_id2nd.clear();  
+  wall_id2nd.reserve(wall_nodes.size());
+  for (size_t i = 0; i < wall_nodes.size(); ++i) 
+  {
+    wall_id2nd[wall_nodes[i].id] = static_cast<int>(i);
+  }
+}
+
 void multi_partition::set_blk_id(std::vector<mesh_block> &blk)
 // 由于generate_mesh_blocks只能根据其接受的分区设置新分出的小分区的id
 // 此函数将局部的id转换成全局的id
@@ -383,7 +395,7 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
 
         // --- 执行 DRRBF 变形 ---
         calculators[moving_blk_id].calculate_deform_DRRBF(
-            inode, d_r2omega1, d_r2omega2, S);
+            inode, d_r2omega1, d_r2omega2, blks[moving_blk_id].block_D, S);
     }
 }
 
@@ -468,6 +480,7 @@ void multi_partition::find_moving_and_static_bndry(
 // i_d_r2omega2: 输出，距离最近的静边界的距离
 {
     // 遍历所有 block 的内部节点树，记录最小和次小的距离
+    assert(!blocks.empty() && "find_moving_and_static_bndry: empty blocks");  // 确保分区非空
     double min_dist = 1.0e20;
     double second_min_dist = 1.0e20;
     int nearest_blk_id = -1;
@@ -489,6 +502,7 @@ void multi_partition::find_moving_and_static_bndry(
     }
 
     // 动边界：离节点最近的 block
+    assert(nearest_blk_id >= 0 && "nearest block not found");
     i_id = nearest_blk_id;
     i_d_r2omega1 = min_dist;
 

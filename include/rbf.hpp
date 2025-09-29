@@ -22,26 +22,24 @@ inline double rbf_func_Wendland(double eta, double R)
 }
 
 // DDRBF的psi函数定义
-inline double psi(double d_r2omega1,double d_r2omega2, const State& S)  //计算RRBF：I(r)=~phi*(omgea_i*phi_i)  哑标代表求和
-//传入参数：d_r2omega1   点到运动物面点的最小距离
-//         d_r2omega2   点到静止物面点的最小距离
-//         参数结构体 S
-//         S包括数据: alpha, beta, D
+
+// rbf.hpp
+inline double psi(double d_r2omega1, double d_r2omega2, double D, const State& S)
 {
-    double psi1 = 0; double psi2 = 0;
-    double psi2_temp = 0;
-    if (d_r2omega1 >= 0 && d_r2omega1 <= 1)
-    {
-        psi1 = 1 - d_r2omega1 / S.D;
-    }
-    else if (d_r2omega1 > 0)   //实际上为了减少运算，这段可以省略，在待插值点循环的时候直接判断即可
-    {
-        psi1 = 0;
-    }
-    psi2_temp = (S.alpha * d_r2omega2 - d_r2omega1) / S.beta;
+    double psi1 = 0.0, psi2 = 0.0;
+
+    // 用 D 作为半径阈值
+    if (d_r2omega1 >= 0 && d_r2omega1 <= D)
+        psi1 = 1.0 - d_r2omega1 / D;
+    else if (d_r2omega1 > D)  // 超过限制半径就直接为0
+        psi1 = 0.0;
+
+    const double psi2_temp = (S.alpha * d_r2omega2 - d_r2omega1) / S.beta;
     psi2 = std::min(1.0, std::max(0.0, psi2_temp));
+
     return std::min(psi1, psi2);
 }
+
 
 //RBF插值系统类，该类完成插值系数计算
 class RBFInterpolator 
@@ -96,9 +94,7 @@ public:
     void calculate_deform_RBF(Node& inode, const State& S) const;  
 
     // 计算单个节点的变形（RRBF）
-    void calculate_deform_DRRBF(Node& inode, 
-                                double d_r2omega1, double d_r2omega2, 
-                                const State& S) const;
+    void calculate_deform_DRRBF(Node &inode, double d_r2omega1, double d_r2omega2, double D, const State &S) const;
     
 };
 
