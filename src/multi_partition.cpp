@@ -370,14 +370,14 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     auto& calculators = block_rbf_per_level_.at(lvl);  // 当前层的所有 RBF 计算器
 
     for (auto& inode : coords) {
-        // 节点等级过滤，用于加速DDRBF计算
-        auto it_lvl = m_nd2wall_lvl_mp_.find(inode.id);
-        if (it_lvl != m_nd2wall_lvl_mp_.end()) {
-            int node_lvl = it_lvl->second;
-            if (node_lvl > 3 - static_cast<int>(lvl)) {
-                continue;  // 等级过高，本层不处理
-            }
-        }
+        // // 节点等级过滤，用于加速DDRBF计算
+        // auto it_lvl = m_nd2wall_lvl_mp_.find(inode.id);
+        // if (it_lvl != m_nd2wall_lvl_mp_.end()) {
+        //     int node_lvl = it_lvl->second;
+        //     if (node_lvl > 3 - static_cast<int>(lvl)) {
+        //         continue;  // 等级过高，本层不处理
+        //     }
+        // }
 
         // --- 查找动边界和静边界 ---
         int    moving_blk_id = 0;
