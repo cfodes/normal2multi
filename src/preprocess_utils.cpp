@@ -34,6 +34,6 @@ void _set_nd2wall_lvl_mp(std::unordered_map<int, int>& _mp,
         if (min_d <= 5.0 * D) lvl = 2;
         if (min_d <= D)       lvl = 1;
 
-        _mp[ind.id] = lvl;
+        _mp[ind.id] = lvl;  //把节点 id -> 等级存入 map
     }
 }

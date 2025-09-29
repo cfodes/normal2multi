@@ -281,7 +281,7 @@ void writefile(const std::string& file_name, const State& S)
         //写节点数
         ofs << "NPOIN= " << S.NPoints << std::endl;
         //写节点
-        std::for_each(S.node_coords.begin(), S.node_coords.end(), [&ofs](const auto& node, const State& S)
+        std::for_each(S.node_coords.begin(), S.node_coords.end(), [&ofs, &S](const auto& node)
             {
                 if (S.Dimension == 2)
                 {
