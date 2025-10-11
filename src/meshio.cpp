@@ -13,7 +13,7 @@ void readfile(std::string const& file_name, State& S)
 
     if (!ifs.is_open())
     {
-        std::cout << "文件打开失败！" << std::endl;
+        std::cout << "failed to open file" << std::endl;
         return;
     }
     int Ndime = 0;  //网格维度
@@ -243,7 +243,7 @@ void writefile(const std::string& file_name, const State& S)
     ofs.open(file_name, std::ios::out | std::ios::trunc);
     if (!ofs.is_open())
     {
-        std::cout << "文件打开失败！" << std::endl;
+        std::cout << "failed to open file" << std::endl;
         return;
     }
     else

@@ -24,11 +24,13 @@ void TestDriver::run()
     write_mesh();  // 写出变形后的网格文件
 }
 
+#include <iostream>
 void TestDriver::read_mesh() 
 {
     readfile(input_file_, S_);  // 填充 S_ 的数据
     // 设置物面节点
-    S_.wall_nodes = Set_wall_nodes(S_.every_boundary, S_.node_coords);
+    S_.wall_nodes = Set_wall_nodes(S_.every_boundary, S_.node_coords, S_.wall_id);
+    std::cout << "the number of wall nodes is "<<S_.wall_nodes.size() << std::endl;
 }
 
 void TestDriver::preprocess() 
@@ -50,7 +52,7 @@ void TestDriver::run_multi_partition()
     mp.set_m_nd2wall_lvl_mp(nd2wall_lvl_);
 
 
-    mp.divide_wall(S_.every_boundary[0].bound_elements, S_.wall_nodes);
+    mp.divide_wall(S_.every_boundary[S_.wall_id].bound_elements, S_.wall_nodes);
     mp.multi_partition_rbf_algorithm(tol_steps_, S_, S_.wall_nodes, S_.node_coords);
 
 }

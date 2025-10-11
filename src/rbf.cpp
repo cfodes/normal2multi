@@ -198,8 +198,8 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
             if (i % 99 == 0) // 打印信息
             {
                 // 计算变形量，插值误差以及最大误差所对应的max_tol_id，这个对应的是在wall_nodes里的索引
-                // std::cout << "Step: " << i + 1 << std::endl;
-                // std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
+                 std::cout << "Step: " << i + 1 << std::endl;
+                 std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
             }
             if (interp_tol[max_tol_id] < tol)
             {
@@ -217,6 +217,90 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
         }
     }
 }
+
+// 一次性使用 candidates 中的所有候选点建立 RBF 插值系统（不使用贪心/误差控制）
+// 参数：
+//   candidates : 作为支撑点的节点集合（其 Node::df 为目标位移/插值值）
+//   S          : 参数集合（此处使用 S.R 作为 Wendland 的尺度）
+//   reg        : 可选对角正则项，用于提升数值稳定性（默认为 0）
+// 说明：
+//   - A[k] 对应第 k 个分量 (k=0,1,2) 的核矩阵；b[k] 为该分量的右端项；coeff[k] 为系数。
+//   - Wendland 核对称、A 为对称(通常正定)，这里只组装上三角后用 selfadjointView 镜像到下三角。
+//   - 先尝试 Cholesky(LLT)，失败则回退到 LDLT（半正定/轻微不定更稳一些）。
+void RBFInterpolator::BuildAll(const std::vector<Node>& candidates, const State& S, double reg)
+{
+    // 1) 绑定支撑点：把候选点直接作为支撑点
+    suppoints = candidates;
+    const int n = static_cast<int>(suppoints.size());
+
+    // 若没有支撑点，清空线性系统并返回
+    if (n == 0) {
+        for (int k = 0; k < 3; ++k) {
+            A[k].resize(0, 0);    // 空矩阵
+            b[k].resize(0);       // 空向量
+            coeff[k].resize(0);   // 空系数
+        }
+        return;
+    }
+
+    // 2) 预分配：为三个分量各自分配 n×n 矩阵与 n 维向量
+    for (int k = 0; k < 3; ++k) {
+        A[k].setZero(n, n);  // 初始化为 0，便于只写上三角
+        b[k].setZero(n);
+        coeff[k].resize(n);  // 系数长度与支撑点数一致
+    }
+
+    // 3) 组装核矩阵 A 与右端 b
+    //    - 由于核是对称的，只计算 (i,j) 且 j>=i 的上三角部分；
+    //    - b[k](i) 直接使用支撑点的目标位移 df[k] 作为已知值；
+    for (int i = 0; i < n; ++i) {
+        // 右端项：第 i 个支撑点的三个分量目标位移
+        b[0](i) = suppoints[i].df[0];
+        b[1](i) = suppoints[i].df[1];
+        b[2](i) = suppoints[i].df[2];
+
+        // 上三角填充：计算核函数 φ(||xi - xj||)
+        for (int j = i; j < n; ++j) {
+            const double eta = _distance(suppoints[i].point, suppoints[j].point); // 距离 ||xi - xj||
+            const double phi = rbf_func_Wendland(eta, S.R);                       // Wendland 核 φ(eta; R)
+
+            // 三个分量共用同一核矩阵（坐标方向只影响右端项，不影响核）
+            A[0](i, j) = phi;
+            A[1](i, j) = phi;
+            A[2](i, j) = phi;
+        }
+    }
+
+    // 将上三角镜像到下三角，得到对称矩阵；如需正则则在对角上加 reg
+    for (int k = 0; k < 3; ++k) {
+        A[k] = A[k].selfadjointView<Eigen::Upper>(); // 用上三角补全为对称矩阵
+        if (reg > 0.0) {
+            A[k].diagonal().array() += reg;          // 对角正则：提升数值稳定性（如 1e-12 ~ 1e-8）
+        }
+    }
+
+    // 4) 求解 A * coeff = b
+    //    - 优先使用 LLT（对称正定的快速分解）；
+    //    - 若数值问题导致失败，则回退到 LDLT（对称不定也可用，稳健性更好）。
+    for (int k = 0; k < 3; ++k) {
+        Eigen::LLT<Eigen::MatrixXd> llt(A[k]);
+        if (llt.info() == Eigen::Success) {
+            coeff[k] = llt.solve(b[k]);
+        }
+        else {
+            Eigen::LDLT<Eigen::MatrixXd> ldlt(A[k]);
+            coeff[k] = ldlt.solve(b[k]);
+        }
+    }
+}
+
+// 便捷接口：使用已准备好的 external_suppoints 直接构建完整插值系统
+// 典型用法：先通过 set_block_rbf(...) 等函数填充 external_suppoints，再一次性求解
+void RBFInterpolator::BuildAllFromExternal(const State& S, double reg)
+{
+    BuildAll(external_suppoints, S, reg);
+}
+
 
 // 贪心算法误差输出至文件查看
 void RBFInterpolator::write_greedy_tol(const std::string &filename)

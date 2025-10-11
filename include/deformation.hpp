@@ -9,7 +9,7 @@ double _distance(const Point<double>& P1, const Point<double>& P2);
 
 // 物面节点提取函数
 std::vector<Node> Set_wall_nodes(const std::vector<boundary>& every_boundary, 
-    const std::vector<Node>& node_coords);
+    const std::vector<Node>& node_coords, int& wall_id);
 
 // 计算支撑距离R，写入State
 void select_R(const std::vector<Node>& node_coords, double& R);

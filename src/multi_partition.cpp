@@ -3,6 +3,8 @@
 #include "rbf.hpp"
 #include <algorithm>
 #include <iostream>
+#include <chrono>
+using namespace std::chrono;
 
 // ===== 构造 =====
 multi_partition::multi_partition(const std::vector<idx_t> &parts_per_level)
@@ -142,6 +144,8 @@ void multi_partition::multi_partition_rbf_algorithm(
   for (size_t lvl = 0; lvl < levels_; ++lvl) {
     const double tol = tol_steps[lvl];
 
+    //每一步迭代的预处理
+    const auto t_pre_start = high_resolution_clock::now();  //预处理计时开始
     if (lvl != 0) {
       // 根据更新后的all_node_coord和准确的物面变形结果更新wall_prev的节点坐标和待变形量
       update_wall_prev(wall_prev, wall_accurate, all_nodes_coords);
@@ -154,25 +158,48 @@ void multi_partition::multi_partition_rbf_algorithm(
       set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
       // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
       set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
+
+      //预处理计时结束
+      const auto t_pre_end = high_resolution_clock::now();
+      const double ms = duration<double, std::milli>(t_pre_end - t_pre_start).count();
+      std::cout << "[lvl=" << lvl << "] preprocess time: " << ms << " ms\n";
     }
 
     // 步骤 1: 构建 RBF 插值系统（第0层只有1个系统，从第1层开始每个块一个）
+    const auto t_build_start = high_resolution_clock::now(); //插值系统计时开始
     if (lvl == 0) {
       build_single_rbf_system(tol, S, lvl);
     } else { // 构建分区RBF系统
       build_multiple_rbf_systems(tol, S, lvl);
     }
+    //插值系统计时结束
+    const auto t_build_end = high_resolution_clock::now();
+    std::cout << "[lvl=" << lvl << "] build RBF system time: "
+        << duration<double, std::milli>(t_build_end - t_build_start).count()
+        << " ms\n";
 
     // 步骤 2: 执行节点变形量计算
+    const auto t_df_start = high_resolution_clock::now();  //变形量计算计时开始
     if (lvl == 0) {
       apply_simple_rbf_deformation(all_nodes_coords, S, lvl);
     } else // 第 ≥1 层：DRRBF（考虑动/静边界距离）
     {
       apply_drrbf_deformation(all_nodes_coords, S, lvl);
     }
+    //变形量计算计时结束
+    const auto t_df_end = high_resolution_clock::now();
+    std::cout << "[lvl=" << lvl << "] compute df time: "
+        << duration<double, std::milli>(t_df_end - t_df_start).count()
+        << " ms\n";
 
     // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
+    const auto t_update_start = high_resolution_clock::now();  //计算节点坐标计时开始
     calculate_deformed_coordinates(all_nodes_coords);
+    //计算节点坐标计时结束
+    const auto t_update_end = high_resolution_clock::now();
+    std::cout << "[lvl=" << lvl << "] update coordinates time: "
+        << duration<double, std::milli>(t_update_end - t_update_start).count()
+        << " ms\n";
   }
 }
 
@@ -319,9 +346,14 @@ void multi_partition::build_single_rbf_system(double tol, const State &S,
   block_rbf_per_level_[lvl].clear();
   block_rbf_per_level_[lvl].emplace_back(rbf_systems_per_level_[lvl][0]);
 
-  // 直接调用“未预设 external_suppoints”的 Greedy 版本
-  rbf_systems_per_level_[lvl][0].Greedy_algorithm(
-      unique_boundary_per_level_.at(lvl).at(0), tol, S);
+  //// 直接调用“未预设 external_suppoints”的 Greedy 版本
+  //rbf_systems_per_level_[lvl][0].Greedy_algorithm(
+  //    unique_boundary_per_level_.at(lvl).at(0), tol, S);
+
+  // ---- 直接用所有候选点一次性构建（不使用贪心）----
+  constexpr double kReg = 1e-12; // 矩阵迭代求解误差
+  rbf_systems_per_level_[lvl][0].BuildAll(
+      unique_boundary_per_level_.at(lvl).at(0), S, kReg);
 }
 
 // ===== 第 ≥1 层：每块一个 RBF 系统 =====
@@ -348,9 +380,15 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
         set_block_rbf(block_rbf_per_level_[lvl], blks);
     }
 
-    // 每块做一次 Greedy_algorithm（使用 external_suppoints）
+    //// 每块做一次 Greedy_algorithm（使用 external_suppoints）
+    //for (int i = 0; i < nb; ++i) {
+    //    rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
+    //}
+
+    // ---- 每块直接一次性构建（使用已填充的 external_suppoints）----
+    constexpr double kReg = 1e-12; // 矩阵迭代求解误差
     for (int i = 0; i < nb; ++i) {
-        rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
+        rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
     }
 }
 
@@ -370,14 +408,14 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     auto& calculators = block_rbf_per_level_.at(lvl);  // 当前层的所有 RBF 计算器
 
     for (auto& inode : coords) {
-        // // 节点等级过滤，用于加速DDRBF计算
-        // auto it_lvl = m_nd2wall_lvl_mp_.find(inode.id);
-        // if (it_lvl != m_nd2wall_lvl_mp_.end()) {
-        //     int node_lvl = it_lvl->second;
-        //     if (node_lvl > 3 - static_cast<int>(lvl)) {
-        //         continue;  // 等级过高，本层不处理
-        //     }
-        // }
+        //// 节点等级过滤，用于加速DDRBF计算
+        //auto it_lvl = m_nd2wall_lvl_mp_.find(inode.id);
+        //if (it_lvl != m_nd2wall_lvl_mp_.end()) {
+        //    int node_lvl = it_lvl->second;
+        //    if (node_lvl > 3 - static_cast<int>(lvl)) {
+        //        continue;  // 等级过高，本层不处理
+        //    }
+        //}
 
         // --- 查找动边界和静边界 ---
         int    moving_blk_id = 0;

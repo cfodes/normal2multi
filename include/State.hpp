@@ -12,6 +12,7 @@ struct State
     int Dimension = 0;   //网格维度
     int Nelements = 0;   //单元数
     int NPoints = 0;    //节点数
+    int wall_id = 0;    //物面边界在边界数组的索引
 
     //网格数据相关包括： 所有节点坐标、所有单元信息、所有边界数组、物面节点数组
     std::vector<Node> node_coords;  //保存所有节点的坐标的数组，在node_coords的索引就对应着具体编号
@@ -20,10 +21,10 @@ struct State
     std::vector<Node> wall_nodes;        //物面节点数组
 
     //算法参数
-    double R = 15.0;      //支撑距离 phi = phi(||r-ri||/R)
+    double R = 30.0;      //支撑距离 phi = phi(||r-ri||/R)
     double D = 0.0;       //限制距离 psi = 1-r/D, D是最大的位移变形量的五倍
-    double alpha = 50.0;  //DRRBF参数, 用于将静止的物面网格排出变形区域
-    double beta = 0.05;   //DRRBF参数
+    double alpha = 5.0;  //DRRBF参数, 用于将静止的物面网格排出变形区域
+    double beta = 0.5;   //DRRBF参数
 
     //查询结构
     GridBTree<int, Point<double>> wall_tree;   //根据物面节点构造的二叉树

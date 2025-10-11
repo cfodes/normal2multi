@@ -14,8 +14,9 @@ double _distance(const Point<double>& P1, const Point<double>& P2) {
 
 // 物面节点提取函数
 //确定物面节点的数组，该函数确保节点不重复
+// 确定物面边界在边界数组里的索引wall_id
 //!!!!该函数目前只支持一个wall的情况
-vector<Node> Set_wall_nodes(const vector<boundary>& every_boundary, const vector<Node>& node_coords)
+vector<Node> Set_wall_nodes(const vector<boundary>& every_boundary, const vector<Node>& node_coords, int& wall_id)
 {
     int inode_id = 0;
     unordered_set<int> wall_nodes_set;
@@ -25,6 +26,7 @@ vector<Node> Set_wall_nodes(const vector<boundary>& every_boundary, const vector
     {
         if (every_boundary[i].boundary_tag == "wall")  //查找边界数组里壁面的数组
         {
+            wall_id = i;
             std::cout << "=====================" << endl;
             std::cout << "Setting wall's nodes array ..." << std::endl;
             for (int j = 0; j < every_boundary[i].bound_elements.size(); ++j)  //遍历壁面数组的每个单元
@@ -72,20 +74,48 @@ void select_R(const std::vector<Node>& nodes, double& R)
     // R = std::sqrt(dx * dx + dy * dy + dz * dz);
 
     // 用户设置（网格较大的时候，根据变形范围设置）
-    R = 10;
+    // R = 10;
 
     std::cout << "R is determined as " << R << std::endl;
 }
 
-//物面变形函数 计算的是变形量
+//// 物面变形函数 计算的是变形量
+//Eigen::Vector3d deforming_fuc(const Point<double>& wall_nodes)
+//// naca0012 变形量dy = 0.1*sin(2pix)
+//{
+//    Eigen::Vector3d v1{ 0,0,0 };
+//    v1[0] = 0;   //x方向的变形量
+//    v1[1] = 0.1 * sin(2 * PI * wall_nodes.x);//y方向的变形量
+//    v1[2] = 0;   //z方向的变形量
+//    return v1;
+//}
+
+
+// ONERA M6 翼面变形函数
+// 输入：wall_nodes —— 物面节点坐标
+// 输出：该节点的三方向变形量 (Δx, Δy, Δz)
 Eigen::Vector3d deforming_fuc(const Point<double>& wall_nodes)
 {
-    Eigen::Vector3d v1{ 0,0,0 };
-    v1[0] = 0;   //x方向的变形量
-    v1[1] = 0.1 * sin(2 * PI * wall_nodes.x);//y方向的变形量
-    v1[2] = 0;   //z方向的变形量
-    return v1;
+    Eigen::Vector3d v{ 0.0, 0.0, 0.0 };
+
+    // 设定翼展半宽（b）：根据你的模型实际单位设定
+    // 若你的网格 z 坐标范围为 [0, 1]，可以直接取 b=1；
+    // 若真实几何为 ONERA M6（半展长约 0.647 m），可以设 b = 0.647。
+    const double b = 1.0; // 或者替换为实际半展长
+
+    // 按照文献公式 Δy = 0.25 * b * z * [1 - cos(π * z / b)]
+    // 需对应实际的坐标轴, 文献xc yc zc，实际xm zm ym
+    // 实际为 dzm = 0.25 * b * ym * [1 - cos(π * ym / b)]
+    const double y = wall_nodes.y;
+    v[2] = 0.25 * b * y * (1.0 - std::cos(PI * y / b));
+
+    // 其余方向不变形
+    v[0] = 0.0; // Δx
+    v[1] = 0.0; // Δz
+
+    return v;
 }
+
 
 //物面变形量计算，将D写入State.D
 void calculat_wall_deformation(vector<Node>& wall_nodes, double& D)   //该函数设置物面变形，同时计算物面最大变形量，_D是五倍最大的位移变形量

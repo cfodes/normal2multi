@@ -68,6 +68,13 @@ public:
     //使用贪心算法选择支撑点并且计算，该算法适用于rbf系统还没有设置external_suppoints的情况
     void Greedy_algorithm(const std::vector<Node>& wall_nodes, double tol, const State& S);
 
+    // 直接用传入的所有候选点构建插值系统（不贪心）
+    // reg 为可选对角正则（如 1e-12），默认 0
+    void BuildAll(const std::vector<Node>& candidates, const State& S, double reg = 0.0);
+
+    // 使用已准备好的 external_suppoints 构建（不贪心）
+    void BuildAllFromExternal(const State& S, double reg = 0.0);
+
     //贪心算法误差输出至文件查看
     void write_greedy_tol(const std::string& filename);
 };

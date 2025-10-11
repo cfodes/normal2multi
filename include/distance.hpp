@@ -62,21 +62,21 @@ class Block
 
 namespace gnl
 {
-    // Çó½âÁ½¸ö±äÁ¿ÖĞµÄ×î´óÖµ
+    // æ±‚è§£ä¸¤ä¸ªå˜é‡ä¸­çš„æœ€å¤§å€¼
     template<typename _T1, typename _T2>
     inline auto Max(const _T1& a, const _T2& b)
     {
         return a > b ? a : b;
     }
 
-    // Çó½âÁ½¸ö±äÁ¿ÖĞµÄ×îĞ¡Öµ
+    // æ±‚è§£ä¸¤ä¸ªå˜é‡ä¸­çš„æœ€å°å€¼
     template<typename _T1, typename _T2>
     inline auto Min(const _T1& a, const _T2& b)
     {
         return a > b ? b : a;
     }
 
-    // Çó½â¾ø¶ÔÖµ
+    // æ±‚è§£ç»å¯¹å€¼
     template<typename _Ty>
     inline _Ty ABS(const _Ty& a)
     {
