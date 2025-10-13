@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.10)
 project(MyProject LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_BUILD_TYPE Debug)
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
 # Eigen
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)

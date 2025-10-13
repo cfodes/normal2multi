@@ -1,11 +1,15 @@
 #include "test_driver.hpp"
 #include "Test.hpp"
+#include "StreamCapture.hpp"
 #include <vector>
 #include <string>
+#include <iostream>
+#include <exception>
 
 int main() 
 {
     
+    StreamCapture capture(std::cout);
 
     //// 算例Naca0012 C型网格 分组RBF算法
     //// 输入文件
@@ -38,6 +42,30 @@ int main()
                       output_file,
                       parts, tol);
     driver.run();
+
+    capture.stop();
+    capture.dump_to_stream(std::cout);
+
+    const std::string log_file = "run.log";
+    const std::vector<std::string> log_locations = {
+        "output/" + log_file,
+        "../output/" + log_file
+    };
+
+    bool saved = false;
+    for (const auto& path : log_locations) {
+        try {
+            capture.save_to_file(path);
+            saved = true;
+            break;
+        } catch (const std::exception&) {
+            // try next candidate
+        }
+    }
+
+    if (!saved) {
+        std::cerr << "Failed to write log file to output directory.\n";
+    }
 
     //// 算例ONERA M6纯RBF方法
     //State _S;

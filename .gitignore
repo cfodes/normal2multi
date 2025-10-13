@@ -1,24 +1,13 @@
-# VSCode 配置
-.vscode/
-.cache/
+# 默认忽略所有文件
+/*
 
-# CMake 构建目录
-build/
+# 保留 Git 配置文件
+!/.gitignore
 
-# 编译产物
-*.o
-*.obj
-*.exe
-*.out
-*.log
+# 仅允许 include 和 src 目录上传
+!/include/
+!/src/
 
-# 其他不需要上传的
-CMakeLists.txt
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-Makefile
-data/*.su2
-output/*.su2
-data/*.su2
-output/*.su2
+# include / src 下的所有内容
+!/include/**
+!/src/**
