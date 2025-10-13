@@ -43,12 +43,15 @@ public:
 
     // 运行所有配置，将结果写入 output_root/test_name/run_name.su2
     void run_all() const;
+    void run_all_with_test_info() const;
 
     const std::string& test_name() const { return test_name_; }
     const std::string& input_file() const { return input_file_; }
     const std::vector<PartitionBatchCase>& cases() const { return cases_; }
 
 private:
+    void run_all_impl(bool generate_test_info) const;
+
     std::string test_name_;
     std::string input_file_;
     std::string output_root_;

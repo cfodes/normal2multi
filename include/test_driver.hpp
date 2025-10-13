@@ -20,6 +20,7 @@ public:
     void run();
 
     const std::vector<LevelTiming>& get_last_timing_report() const { return last_timing_report_; }
+    const std::vector<std::vector<std::pair<int, double>>>& get_last_blockD_report() const { return last_blockD_report_; }
 
 private:
     // === 输入输出 ===
@@ -35,6 +36,7 @@ private:
     std::unordered_map<int, int> nd2wall_lvl_;    // 节点id到物面等级的映射
 
     std::vector<LevelTiming> last_timing_report_;
+    std::vector<std::vector<std::pair<int, double>>> last_blockD_report_;
  
     // === 核心流程 ===
     void read_mesh();     // 读取网格文件

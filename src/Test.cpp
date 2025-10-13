@@ -88,6 +88,16 @@ void MultiPartitionBatch::set_output_root(const std::string& output_root)
 
 void MultiPartitionBatch::run_all() const
 {
+    run_all_impl(false);
+}
+
+void MultiPartitionBatch::run_all_with_test_info() const
+{
+    run_all_impl(true);
+}
+
+void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
+{
     if (cases_.empty()) {
         std::cout << "[MultiPartitionBatch] No cases to run for test '" << test_name_ << "'.\n";
         return;
@@ -119,6 +129,16 @@ void MultiPartitionBatch::run_all() const
 
     std::vector<std::pair<std::string, std::vector<LevelTiming>>> reports;
     reports.reserve(cases_.size());
+
+    struct BlockReport {
+        std::string run_name;
+        std::vector<idx_t> parts;
+        std::vector<std::vector<std::pair<int, double>>> data;
+    };
+    std::vector<BlockReport> block_reports;
+    if (generate_test_info) {
+        block_reports.reserve(cases_.size());
+    }
 
     fs::path resolved_input(input_file_);
     if (!fs::exists(resolved_input)) {
@@ -153,6 +173,9 @@ void MultiPartitionBatch::run_all() const
         TestDriver driver(resolved_input.string(), output_path.string(), c.parts, c.tolerances);
         driver.run();
         reports.emplace_back(c.run_name, driver.get_last_timing_report());
+        if (generate_test_info) {
+            block_reports.push_back(BlockReport{c.run_name, c.parts, driver.get_last_blockD_report()});
+        }
     }
 
     if (!reports.empty()) {
@@ -163,7 +186,9 @@ void MultiPartitionBatch::run_all() const
                             XlsxCell::String("preprocess_ms"),
                             XlsxCell::String("build_ms"),
                             XlsxCell::String("compute_ms"),
-                            XlsxCell::String("update_ms")});
+                            XlsxCell::String("update_ms"),
+                            XlsxCell::String("distance_ms"),
+                            XlsxCell::String("apply_ms")});
 
             const auto& timings = report.second;
             for (size_t lvl = 0; lvl < timings.size(); ++lvl) {
@@ -171,7 +196,9 @@ void MultiPartitionBatch::run_all() const
                                 XlsxCell::Number(timings[lvl].preprocess_ms),
                                 XlsxCell::Number(timings[lvl].build_ms),
                                 XlsxCell::Number(timings[lvl].compute_ms),
-                                XlsxCell::Number(timings[lvl].update_ms)});
+                                XlsxCell::Number(timings[lvl].update_ms),
+                                XlsxCell::Number(timings[lvl].distance_ms),
+                                XlsxCell::Number(timings[lvl].apply_ms)});
             }
 
             writer.add_sheet(report.first, rows);
@@ -180,6 +207,44 @@ void MultiPartitionBatch::run_all() const
         const fs::path workbook_path = base_dir / (test_name_ + "_timings.xlsx");
         writer.save(workbook_path.string());
         std::cout << "[MultiPartitionBatch] Timing workbook written to: "
+                  << workbook_path.string() << std::endl;
+    }
+
+    if (generate_test_info && !block_reports.empty()) {
+        XlsxWriter block_writer;
+        for (const auto& report : block_reports) {
+            std::vector<std::vector<XlsxCell>> rows;
+            rows.push_back({XlsxCell::String("lvl"),
+                            XlsxCell::String("part_count"),
+                            XlsxCell::String("block_id"),
+                            XlsxCell::String("block_D")});
+
+            for (size_t lvl = 0; lvl < report.data.size(); ++lvl) {
+                const auto& blocks = report.data[lvl];
+                const double part_count = (lvl < report.parts.size())
+                    ? static_cast<double>(report.parts[lvl])
+                    : 0.0;
+                if (blocks.empty()) {
+                    rows.push_back({XlsxCell::Number(static_cast<double>(lvl)),
+                                    XlsxCell::Number(part_count),
+                                    XlsxCell::String("N/A"),
+                                    XlsxCell::String("N/A")});
+                    continue;
+                }
+                for (const auto& entry : blocks) {
+                    rows.push_back({XlsxCell::Number(static_cast<double>(lvl)),
+                                    XlsxCell::Number(part_count),
+                                    XlsxCell::Number(static_cast<double>(entry.first)),
+                                    XlsxCell::Number(entry.second)});
+                }
+            }
+
+            block_writer.add_sheet(report.run_name, rows);
+        }
+
+        const fs::path workbook_path = base_dir / (test_name_ + "_blockD.xlsx");
+        block_writer.save(workbook_path.string());
+        std::cout << "[MultiPartitionBatch] block_D workbook written to: "
                   << workbook_path.string() << std::endl;
     }
 }

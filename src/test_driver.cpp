@@ -55,6 +55,7 @@ void TestDriver::run_multi_partition()
     mp.divide_wall(S_.every_boundary[S_.wall_id].bound_elements, S_.wall_nodes);
     mp.multi_partition_rbf_algorithm(tol_steps_, S_, S_.wall_nodes, S_.node_coords);
     last_timing_report_ = mp.last_timing_report();
+    last_blockD_report_ = mp.block_d_report();
 
 }
 

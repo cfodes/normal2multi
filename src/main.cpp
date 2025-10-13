@@ -56,7 +56,12 @@ int main()
                    {25, 8, 6},
                    {1e-14, 1e-14, 1e-7});
 
-    batch.run_all();
+    const bool run_test_mode = false; // set true to export additional test info (block_D workbook)
+    if (run_test_mode) {
+        batch.run_all_with_test_info();
+    } else {
+        batch.run_all();
+    }
 
     capture.stop();
     capture.dump_to_stream(std::cout);

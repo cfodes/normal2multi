@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <metis.h>
 #include <cassert>
+#include <utility>
 #include "geometry.hpp"
 #include "distance.hpp"
 #include "block.hpp"          // mesh_block / Reset_blocks
@@ -17,6 +18,9 @@ struct LevelTiming {
     double build_ms = 0.0;
     double compute_ms = 0.0;
     double update_ms = 0.0;
+    double distance_ms = 0.0;
+    double apply_ms = 0.0;
+    double max_block_D = 0.0;
 };
 
 // 多级 METIS 分区 + 分组 RBF 主控类
@@ -52,6 +56,7 @@ public:
     const std::vector<int>& query_unique_bndry2blkid(size_t lvl, int nd_id) const;
 
     const std::vector<LevelTiming>& last_timing_report() const { return timing_report_; }
+    const std::vector<std::vector<std::pair<int, double>>>& block_d_report() const { return blockD_report_; }
 
 private:
     // ===== 成员数据 =====
@@ -83,6 +88,7 @@ private:
 
     // 最近一次运行的计时结果
     std::vector<LevelTiming> timing_report_;
+    std::vector<std::vector<std::pair<int, double>>> blockD_report_;
 
 private:
     // ===== 内部工具 =====
@@ -104,7 +110,7 @@ private:
     void update_unique_bndry_nodes(const std::vector<Node>& wall_prev, int lvl);
 
     // 用 wall_prev 更新本层 blocks 的节点待变形量，并重建块的 kd-tree（并计算 block_D）
-    void set_blocks_df_and_tree(const std::vector<Node>& wall_prev, int lvl);
+    double set_blocks_df_and_tree(const std::vector<Node>& wall_prev, int lvl);
 
     // 第 0 层：建立全局 RBF 系统（用本层收集到的 unique 边界点作为候选集）
     void build_single_rbf_system(double tol, const State& S, size_t lvl);
@@ -118,7 +124,8 @@ private:
 
     // 第 ≥1 层：DRRBF（考虑动/静边界距离）
     void apply_drrbf_deformation(std::vector<Node>& coords,
-                                 const State& S, size_t lvl);
+                                 const State& S, size_t lvl,
+                                 LevelTiming& timing_row);
 
     // 组建“历史 unique 边界” kd-tree（供静边界距离查询）
     void set_unique_bndry_tree(size_t lvl,
