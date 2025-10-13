@@ -3,6 +3,7 @@
 #include "rbf.hpp"
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include <chrono>
 using namespace std::chrono;
 
@@ -141,6 +142,14 @@ void multi_partition::multi_partition_rbf_algorithm(
   std::vector<Node> wall_prev =
       wall_nodes; // 当前物面结果，第 0 层保持原始 wall
 
+  struct TimingRow {
+    double preprocess_ms = 0.0;
+    double build_ms = 0.0;
+    double compute_ms = 0.0;
+    double update_ms = 0.0;
+  };
+  std::vector<TimingRow> timing_report(levels_);
+
   for (size_t lvl = 0; lvl < levels_; ++lvl) {
     const double tol = tol_steps[lvl];
 
@@ -162,6 +171,7 @@ void multi_partition::multi_partition_rbf_algorithm(
       //预处理计时结束
       const auto t_pre_end = high_resolution_clock::now();
       const double ms = duration<double, std::milli>(t_pre_end - t_pre_start).count();
+      timing_report[lvl].preprocess_ms = ms;
       std::cout << "[lvl=" << lvl << "] preprocess time: " << ms << " ms\n";
     }
 
@@ -174,8 +184,10 @@ void multi_partition::multi_partition_rbf_algorithm(
     }
     //插值系统计时结束
     const auto t_build_end = high_resolution_clock::now();
+    const double build_ms = duration<double, std::milli>(t_build_end - t_build_start).count();
+    timing_report[lvl].build_ms = build_ms;
     std::cout << "[lvl=" << lvl << "] build RBF system time: "
-        << duration<double, std::milli>(t_build_end - t_build_start).count()
+        << build_ms
         << " ms\n";
 
     // 步骤 2: 执行节点变形量计算
@@ -188,8 +200,10 @@ void multi_partition::multi_partition_rbf_algorithm(
     }
     //变形量计算计时结束
     const auto t_df_end = high_resolution_clock::now();
+    const double compute_ms = duration<double, std::milli>(t_df_end - t_df_start).count();
+    timing_report[lvl].compute_ms = compute_ms;
     std::cout << "[lvl=" << lvl << "] compute df time: "
-        << duration<double, std::milli>(t_df_end - t_df_start).count()
+        << compute_ms
         << " ms\n";
 
     // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
@@ -197,9 +211,42 @@ void multi_partition::multi_partition_rbf_algorithm(
     calculate_deformed_coordinates(all_nodes_coords);
     //计算节点坐标计时结束
     const auto t_update_end = high_resolution_clock::now();
+    const double update_ms = duration<double, std::milli>(t_update_end - t_update_start).count();
+    timing_report[lvl].update_ms = update_ms;
     std::cout << "[lvl=" << lvl << "] update coordinates time: "
-        << duration<double, std::milli>(t_update_end - t_update_start).count()
+        << update_ms
         << " ms\n";
+  }
+
+  auto write_timing_csv = [&](const std::string& path) -> bool {
+    std::ofstream ofs(path, std::ios::out | std::ios::trunc);
+    if (!ofs) {
+      return false;
+    }
+    ofs << "lvl,preprocess_ms,build_ms,compute_ms,update_ms\n";
+    for (size_t lvl = 0; lvl < timing_report.size(); ++lvl) {
+      ofs << lvl << ','
+          << timing_report[lvl].preprocess_ms << ','
+          << timing_report[lvl].build_ms << ','
+          << timing_report[lvl].compute_ms << ','
+          << timing_report[lvl].update_ms << '\n';
+    }
+    return true;
+  };
+
+  const std::vector<std::string> csv_paths = {
+      "output/result.csv",
+      "../output/result.csv"
+  };
+  bool csv_written = false;
+  for (const auto& path : csv_paths) {
+    if (write_timing_csv(path)) {
+      csv_written = true;
+      break;
+    }
+  }
+  if (!csv_written) {
+    std::cerr << "Failed to write timing csv report.\n";
   }
 }
 
