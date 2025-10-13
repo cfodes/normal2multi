@@ -45,16 +45,20 @@ int main()
 
     MultiPartitionBatch batch(
         "onera_m6_experiments",
-        "data/onera_m6_294K.su2"
+        "data/onera_m6_2M4.su2"
     );
 
-    batch.add_case("case_30_4_2",
-                   {30, 4, 2},
-                   {1e-14, 1e-14, 1e-7});
+    batch.add_case("case_80_5_2",
+                   {80, 5, 2},
+                   {1e-14, 1e-14, 1e-5});
 
-    batch.add_case("case_25_8_6",
-                   {25, 8, 6},
-                   {1e-14, 1e-14, 1e-7});
+    batch.add_case("case_50_8_6",
+                   {50, 8, 2},
+                   {1e-14, 1e-14, 1e-5});
+
+    batch.add_case("case_25_16_2",
+                   {25, 16, 2},
+                   {1e-14, 1e-14, 1e-5});
 
     const bool run_test_mode = true; // flip to false once test-info output is no longer needed
     if (run_test_mode) {
