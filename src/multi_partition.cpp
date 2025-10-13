@@ -3,7 +3,6 @@
 #include "rbf.hpp"
 #include <algorithm>
 #include <iostream>
-#include <fstream>
 #include <chrono>
 using namespace std::chrono;
 
@@ -218,35 +217,12 @@ void multi_partition::multi_partition_rbf_algorithm(
         << " ms\n";
   }
 
-  auto write_timing_csv = [&](const std::string& path) -> bool {
-    std::ofstream ofs(path, std::ios::out | std::ios::trunc);
-    if (!ofs) {
-      return false;
-    }
-    ofs << "lvl,preprocess_ms,build_ms,compute_ms,update_ms\n";
-    for (size_t lvl = 0; lvl < timing_report.size(); ++lvl) {
-      ofs << lvl << ','
-          << timing_report[lvl].preprocess_ms << ','
-          << timing_report[lvl].build_ms << ','
-          << timing_report[lvl].compute_ms << ','
-          << timing_report[lvl].update_ms << '\n';
-    }
-    return true;
-  };
-
-  const std::vector<std::string> csv_paths = {
-      "output/result.csv",
-      "../output/result.csv"
-  };
-  bool csv_written = false;
-  for (const auto& path : csv_paths) {
-    if (write_timing_csv(path)) {
-      csv_written = true;
-      break;
-    }
-  }
-  if (!csv_written) {
-    std::cerr << "Failed to write timing csv report.\n";
+  timing_report_.resize(timing_report.size());
+  for (size_t lvl = 0; lvl < timing_report.size(); ++lvl) {
+    timing_report_[lvl].preprocess_ms = timing_report[lvl].preprocess_ms;
+    timing_report_[lvl].build_ms = timing_report[lvl].build_ms;
+    timing_report_[lvl].compute_ms = timing_report[lvl].compute_ms;
+    timing_report_[lvl].update_ms = timing_report[lvl].update_ms;
   }
 }
 

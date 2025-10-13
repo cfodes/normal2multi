@@ -12,6 +12,13 @@
 #include "metis_block.hpp"
 #include "State.hpp"
 
+struct LevelTiming {
+    double preprocess_ms = 0.0;
+    double build_ms = 0.0;
+    double compute_ms = 0.0;
+    double update_ms = 0.0;
+};
+
 // 多级 METIS 分区 + 分组 RBF 主控类
 class multi_partition {
 public:
@@ -44,6 +51,8 @@ public:
     // 获取在第 lvl 层，一个 unique 边界节点 id 所在的所有分区编号
     const std::vector<int>& query_unique_bndry2blkid(size_t lvl, int nd_id) const;
 
+    const std::vector<LevelTiming>& last_timing_report() const { return timing_report_; }
+
 private:
     // ===== 成员数据 =====
     size_t levels_;                               // 层数
@@ -71,6 +80,9 @@ private:
 
     // 前置构建：unique 边界到分区编号的映射（按层存）
     std::vector<std::unordered_map<int, std::vector<int>>> unique_bndry2blkid_per_lvl_;
+
+    // 最近一次运行的计时结果
+    std::vector<LevelTiming> timing_report_;
 
 private:
     // ===== 内部工具 =====

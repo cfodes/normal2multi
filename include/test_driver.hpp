@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include "State.hpp"
+#include "multi_partition.hpp"
 
 
 class TestDriver {
@@ -18,6 +19,8 @@ public:
     // 主执行流程
     void run();
 
+    const std::vector<LevelTiming>& get_last_timing_report() const { return last_timing_report_; }
+
 private:
     // === 输入输出 ===
     std::string input_file_;   // 输入网格文件名
@@ -30,6 +33,8 @@ private:
     // === 状态数据 ===
     State S_;                      // 状态参数
     std::unordered_map<int, int> nd2wall_lvl_;    // 节点id到物面等级的映射
+
+    std::vector<LevelTiming> last_timing_report_;
  
     // === 核心流程 ===
     void read_mesh();     // 读取网格文件

@@ -29,27 +29,42 @@ int main()
     //std::vector<idx_t> parts{ 199,24,2 };
     //std::vector<double> tol{ 1e-14,1e-14,1e-7 };
 
-    // 算例ONERA M6结构网格 分组RBF算法
-    // 输入文件
-    std::string input_file = "../data/onera_m6_294K.su2";
-    // 输出文件
-    std::string output_file = "../output/onera_m6_294K_result.su2";
-    // 设置分区数和误差容限
-    std::vector<idx_t> parts{ 30,4,2 };
-    std::vector<double> tol{ 1e-14,1e-14,1e-7 };
+    //// 算例ONERA M6结构网格 分组RBF算法
+    //// 输入文件
+    //std::string input_file = "../data/onera_m6_294K.su2";
+    //// 输出文件
+    //std::string output_file = "../output/onera_m6_294K_result.su2";
+    //// 设置分区数和误差容限
+    //std::vector<idx_t> parts{ 30,4,2 };
+    //std::vector<double> tol{ 1e-14,1e-14,1e-7 };
 
-    TestDriver driver(input_file,
-                      output_file,
-                      parts, tol);
-    driver.run();
+    //TestDriver driver(input_file,
+    //                  output_file,
+    //                  parts, tol);
+    //driver.run();
+
+    MultiPartitionBatch batch(
+        "onera_m6_experiments",
+        "data/onera_m6_294K.su2"
+    );
+
+    batch.add_case("case_30_4_2",
+                   {30, 4, 2},
+                   {1e-14, 1e-14, 1e-7});
+
+    batch.add_case("case_25_8_6",
+                   {25, 8, 6},
+                   {1e-14, 1e-14, 1e-7});
+
+    batch.run_all();
 
     capture.stop();
     capture.dump_to_stream(std::cout);
 
     const std::string log_file = "run.log";
     const std::vector<std::string> log_locations = {
-        "output/" + log_file,
-        "../output/" + log_file
+        "../output/" + log_file,
+        "output/" + log_file
     };
 
     bool saved = false;

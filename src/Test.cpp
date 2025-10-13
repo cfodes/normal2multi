@@ -1,9 +1,14 @@
 #include "Test.hpp"
 #include "meshio.hpp"
 #include "geometry.hpp"
+#include "test_driver.hpp"
+#include "XlsxWriter.hpp"
+#include <filesystem>
 #include <iostream>
 #include <ctime>
 #include <chrono>
+#include <stdexcept>
+#include <vector>
 using namespace std::chrono;
 
 void RBFTest::run_global_test(const std::string& input_file,
@@ -45,4 +50,136 @@ void RBFTest::run_global_test(const std::string& input_file,
     writefile(output_file, d_S);
     std::cout << "Deformed mesh written to: " << output_file << std::endl;
     std::cout << "=====================================\n";
+}
+
+MultiPartitionBatch::MultiPartitionBatch(std::string test_name,
+                                         std::string input_file,
+                                         std::string output_root)
+    : test_name_(std::move(test_name)),
+      input_file_(std::move(input_file)),
+      output_root_(output_root.empty() ? "output" : std::move(output_root))
+{}
+
+void MultiPartitionBatch::add_case(const std::string& run_name,
+                                   const std::vector<idx_t>& parts,
+                                   const std::vector<double>& tolerances)
+{
+    if (run_name.empty()) {
+        throw std::invalid_argument("run_name must not be empty");
+    }
+    if (parts.empty()) {
+        throw std::invalid_argument("parts configuration must not be empty");
+    }
+    if (tolerances.size() != parts.size()) {
+        throw std::invalid_argument("parts and tolerances must have the same length");
+    }
+    cases_.push_back(PartitionBatchCase{run_name, parts, tolerances});
+}
+
+void MultiPartitionBatch::clear_cases()
+{
+    cases_.clear();
+}
+
+void MultiPartitionBatch::set_output_root(const std::string& output_root)
+{
+    output_root_ = output_root.empty() ? "output" : output_root;
+}
+
+void MultiPartitionBatch::run_all() const
+{
+    if (cases_.empty()) {
+        std::cout << "[MultiPartitionBatch] No cases to run for test '" << test_name_ << "'.\n";
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    const std::vector<fs::path> candidates = {
+        fs::path("..") / output_root_ / test_name_,
+        fs::path(output_root_) / test_name_
+    };
+
+    fs::path base_dir;
+    std::error_code ec;
+    for (const auto& candidate : candidates) {
+        if (candidate.empty()) {
+            continue;
+        }
+        ec.clear();
+        fs::create_directories(candidate, ec);
+        if (!ec || fs::exists(candidate)) {
+            base_dir = candidate;
+            break;
+        }
+    }
+
+    if (base_dir.empty()) {
+        throw std::runtime_error("Failed to create output directory for test '" + test_name_ + "'.");
+    }
+
+    std::vector<std::pair<std::string, std::vector<LevelTiming>>> reports;
+    reports.reserve(cases_.size());
+
+    fs::path resolved_input(input_file_);
+    if (!fs::exists(resolved_input)) {
+        const std::vector<fs::path> candidates = {
+            fs::path("..") / input_file_,
+            fs::path("../") / input_file_,
+            fs::path("./") / input_file_
+        };
+        bool found = false;
+        for (const auto& candidate : candidates) {
+            if (fs::exists(candidate)) {
+                resolved_input = candidate;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            throw std::runtime_error("Input file not found: " + input_file_);
+        }
+    }
+
+    for (const auto& c : cases_) {
+        fs::path file_name = c.run_name;
+        if (file_name.extension().empty()) {
+            file_name += ".su2";
+        }
+        const fs::path output_path = base_dir / file_name;
+
+        std::cout << "[MultiPartitionBatch] Running case '" << c.run_name
+                  << "' -> " << output_path.string() << std::endl;
+
+        TestDriver driver(resolved_input.string(), output_path.string(), c.parts, c.tolerances);
+        driver.run();
+        reports.emplace_back(c.run_name, driver.get_last_timing_report());
+    }
+
+    if (!reports.empty()) {
+        XlsxWriter writer;
+        for (const auto& report : reports) {
+            std::vector<std::vector<XlsxCell>> rows;
+            rows.push_back({XlsxCell::String("lvl"),
+                            XlsxCell::String("preprocess_ms"),
+                            XlsxCell::String("build_ms"),
+                            XlsxCell::String("compute_ms"),
+                            XlsxCell::String("update_ms")});
+
+            const auto& timings = report.second;
+            for (size_t lvl = 0; lvl < timings.size(); ++lvl) {
+                rows.push_back({XlsxCell::Number(static_cast<double>(lvl)),
+                                XlsxCell::Number(timings[lvl].preprocess_ms),
+                                XlsxCell::Number(timings[lvl].build_ms),
+                                XlsxCell::Number(timings[lvl].compute_ms),
+                                XlsxCell::Number(timings[lvl].update_ms)});
+            }
+
+            writer.add_sheet(report.first, rows);
+        }
+
+        const fs::path workbook_path = base_dir / (test_name_ + "_timings.xlsx");
+        writer.save(workbook_path.string());
+        std::cout << "[MultiPartitionBatch] Timing workbook written to: "
+                  << workbook_path.string() << std::endl;
+    }
 }
