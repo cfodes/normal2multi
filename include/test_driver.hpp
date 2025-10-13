@@ -19,8 +19,11 @@ public:
     // 主执行流程
     void run();
 
+    // Accessors used by batch runners after a call to run()
     const std::vector<LevelTiming>& get_last_timing_report() const { return last_timing_report_; }
-    const std::vector<std::vector<std::pair<int, double>>>& get_last_blockD_report() const { return last_blockD_report_; }
+    const std::vector<std::vector<BlockTestInfo>>& get_last_block_info_report() const { return last_block_info_report_; }
+    // Switch on/off collection of extra test diagnostics
+    void set_collect_test_info(bool flag) { collect_test_info_ = flag; }
 
 private:
     // === 输入输出 ===
@@ -36,7 +39,8 @@ private:
     std::unordered_map<int, int> nd2wall_lvl_;    // 节点id到物面等级的映射
 
     std::vector<LevelTiming> last_timing_report_;
-    std::vector<std::vector<std::pair<int, double>>> last_blockD_report_;
+    std::vector<std::vector<BlockTestInfo>> last_block_info_report_;
+    bool collect_test_info_ = false; // keeps track of whether the next run() should gather test diagnostics
  
     // === 核心流程 ===
     void read_mesh();     // 读取网格文件

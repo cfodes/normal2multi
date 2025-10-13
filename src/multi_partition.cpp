@@ -142,7 +142,12 @@ void multi_partition::multi_partition_rbf_algorithm(
       wall_nodes; // 当前物面结果，第 0 层保持原始 wall
 
   std::vector<LevelTiming> timing_report(levels_);
-  blockD_report_.assign(levels_, {});
+  if (collect_test_info_) {
+    // Pre-size per-level block diagnostic container when test mode is on
+    block_info_report_.assign(levels_, {});
+  } else {
+    block_info_report_.clear();
+  }
 
   for (size_t lvl = 0; lvl < levels_; ++lvl) {
     const double tol = tol_steps[lvl];
@@ -351,15 +356,32 @@ double multi_partition::set_blocks_df_and_tree(const std::vector<Node> &wall_pre
 {
   auto &blks = blocks_per_level_.at(lvl);    //blks：当前层级的小分区数组
   double max_block_D = 0.0;
-  auto &lvl_report = blockD_report_[lvl];
-  lvl_report.clear();
-  lvl_report.reserve(blks.size());
-  for (auto &b : blks) 
-  {
-    b.set_blk_nodes_df(wall_prev, wall_id2nodes_);     //根据已经更新的wall_prev设定blocks的节点待变形量
-    b.set_block_tree();
-    max_block_D = std::max(max_block_D, b.block_D);
-    lvl_report.emplace_back(b.block_id, b.block_D);
+  if (collect_test_info_) {
+    // Prepare the current level's diagnostic storage
+    if (block_info_report_.size() <= static_cast<std::size_t>(lvl)) {
+      block_info_report_.resize(levels_);
+    }
+    auto &lvl_report = block_info_report_[lvl];
+    lvl_report.clear();
+    lvl_report.reserve(blks.size());
+    for (auto &b : blks) 
+    {
+      b.set_blk_nodes_df(wall_prev, wall_id2nodes_);     //根据已经更新的wall_prev设定blocks的节点待变形量
+      b.set_block_tree();
+      max_block_D = std::max(max_block_D, b.block_D);
+      lvl_report.push_back(BlockTestInfo{b.block_id,
+                                         b.internal_nodes.size(),
+                                         0,
+                                         0,
+                                         b.block_D});
+    }
+  } else {
+    for (auto &b : blks) 
+    {
+      b.set_blk_nodes_df(wall_prev, wall_id2nodes_);     //根据已经更新的wall_prev设定blocks的节点待变形量
+      b.set_block_tree();
+      max_block_D = std::max(max_block_D, b.block_D);
+    }
   }
   return max_block_D;
 }
@@ -409,6 +431,14 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
         set_block_rbf(block_rbf_per_level_[lvl], blks);
     }
 
+    if (collect_test_info_ && block_info_report_.size() > static_cast<std::size_t>(lvl)) {
+        // Record candidate pool size per block for diagnostics
+        auto &lvl_report = block_info_report_[lvl];
+        for (int i = 0; i < nb && i < static_cast<int>(lvl_report.size()); ++i) {
+            lvl_report[i].candidate_points = rbf_systems_per_level_[lvl][i].external_suppoints.size();
+        }
+    }
+
     //// 每块做一次 Greedy_algorithm（使用 external_suppoints）
     //for (int i = 0; i < nb; ++i) {
     //    rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
@@ -418,6 +448,14 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
     constexpr double kReg = 1e-12; // 矩阵迭代求解误差
     for (int i = 0; i < nb; ++i) {
         rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
+    }
+
+    if (collect_test_info_ && block_info_report_.size() > static_cast<std::size_t>(lvl)) {
+        // Record resulting support count per block for diagnostics
+        auto &lvl_report = block_info_report_[lvl];
+        for (int i = 0; i < nb && i < static_cast<int>(lvl_report.size()); ++i) {
+            lvl_report[i].support_points = rbf_systems_per_level_[lvl][i].suppoints.size();
+        }
     }
 }
 

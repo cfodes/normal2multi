@@ -133,7 +133,7 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
     struct BlockReport {
         std::string run_name;
         std::vector<idx_t> parts;
-        std::vector<std::vector<std::pair<int, double>>> data;
+        std::vector<std::vector<BlockTestInfo>> data;
     };
     std::vector<BlockReport> block_reports;
     if (generate_test_info) {
@@ -171,10 +171,11 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
                   << "' -> " << output_path.string() << std::endl;
 
         TestDriver driver(resolved_input.string(), output_path.string(), c.parts, c.tolerances);
+        driver.set_collect_test_info(generate_test_info);
         driver.run();
         reports.emplace_back(c.run_name, driver.get_last_timing_report());
         if (generate_test_info) {
-            block_reports.push_back(BlockReport{c.run_name, c.parts, driver.get_last_blockD_report()});
+            block_reports.push_back(BlockReport{c.run_name, c.parts, driver.get_last_block_info_report()});
         }
     }
 
@@ -217,6 +218,9 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
             rows.push_back({XlsxCell::String("lvl"),
                             XlsxCell::String("part_count"),
                             XlsxCell::String("block_id"),
+                            XlsxCell::String("internal_points"),
+                            XlsxCell::String("candidate_points"),
+                            XlsxCell::String("support_points"),
                             XlsxCell::String("block_D")});
 
             for (size_t lvl = 0; lvl < report.data.size(); ++lvl) {
@@ -228,23 +232,29 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
                     rows.push_back({XlsxCell::Number(static_cast<double>(lvl)),
                                     XlsxCell::Number(part_count),
                                     XlsxCell::String("N/A"),
+                                    XlsxCell::String("N/A"),
+                                    XlsxCell::String("N/A"),
+                                    XlsxCell::String("N/A"),
                                     XlsxCell::String("N/A")});
                     continue;
                 }
                 for (const auto& entry : blocks) {
                     rows.push_back({XlsxCell::Number(static_cast<double>(lvl)),
                                     XlsxCell::Number(part_count),
-                                    XlsxCell::Number(static_cast<double>(entry.first)),
-                                    XlsxCell::Number(entry.second)});
+                                    XlsxCell::Number(static_cast<double>(entry.block_id)),
+                                    XlsxCell::Number(static_cast<double>(entry.internal_points)),
+                                    XlsxCell::Number(static_cast<double>(entry.candidate_points)),
+                                    XlsxCell::Number(static_cast<double>(entry.support_points)),
+                                    XlsxCell::Number(entry.block_D)});
                 }
             }
 
             block_writer.add_sheet(report.run_name, rows);
         }
 
-        const fs::path workbook_path = base_dir / (test_name_ + "_blockD.xlsx");
+        const fs::path workbook_path = base_dir / (test_name_ + "_test_info.xlsx");
         block_writer.save(workbook_path.string());
-        std::cout << "[MultiPartitionBatch] block_D workbook written to: "
+        std::cout << "[MultiPartitionBatch] test info workbook written to: "
                   << workbook_path.string() << std::endl;
     }
 }

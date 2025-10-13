@@ -49,13 +49,14 @@ void TestDriver::preprocess()
 void TestDriver::run_multi_partition()
 {
     multi_partition mp(parts_per_level_);
+    mp.set_collect_test_info(collect_test_info_);
     mp.set_m_nd2wall_lvl_mp(nd2wall_lvl_);
 
 
     mp.divide_wall(S_.every_boundary[S_.wall_id].bound_elements, S_.wall_nodes);
     mp.multi_partition_rbf_algorithm(tol_steps_, S_, S_.wall_nodes, S_.node_coords);
     last_timing_report_ = mp.last_timing_report();
-    last_blockD_report_ = mp.block_d_report();
+    last_block_info_report_ = mp.block_info_report();
 
 }
 

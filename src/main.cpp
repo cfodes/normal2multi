@@ -56,7 +56,7 @@ int main()
                    {25, 8, 6},
                    {1e-14, 1e-14, 1e-7});
 
-    const bool run_test_mode = false; // set true to export additional test info (block_D workbook)
+    const bool run_test_mode = true; // flip to false once test-info output is no longer needed
     if (run_test_mode) {
         batch.run_all_with_test_info();
     } else {

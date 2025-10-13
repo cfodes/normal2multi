@@ -6,6 +6,7 @@
 #include <metis.h>
 #include <cassert>
 #include <utility>
+#include <cstddef>
 #include "geometry.hpp"
 #include "distance.hpp"
 #include "block.hpp"          // mesh_block / Reset_blocks
@@ -13,6 +14,7 @@
 #include "metis_block.hpp"
 #include "State.hpp"
 
+// Holds per-level timing statistics for profiling
 struct LevelTiming {
     double preprocess_ms = 0.0;
     double build_ms = 0.0;
@@ -21,6 +23,15 @@ struct LevelTiming {
     double distance_ms = 0.0;
     double apply_ms = 0.0;
     double max_block_D = 0.0;
+};
+
+// Extra diagnostics collected in test mode
+struct BlockTestInfo {
+    int block_id = -1;
+    std::size_t internal_points = 0;
+    std::size_t candidate_points = 0;
+    std::size_t support_points = 0;
+    double block_D = 0.0;
 };
 
 // 多级 METIS 分区 + 分组 RBF 主控类
@@ -55,8 +66,11 @@ public:
     // 获取在第 lvl 层，一个 unique 边界节点 id 所在的所有分区编号
     const std::vector<int>& query_unique_bndry2blkid(size_t lvl, int nd_id) const;
 
+    // Accessors for the latest reports (timing + optional block diagnostics)
     const std::vector<LevelTiming>& last_timing_report() const { return timing_report_; }
-    const std::vector<std::vector<std::pair<int, double>>>& block_d_report() const { return blockD_report_; }
+    const std::vector<std::vector<BlockTestInfo>>& block_info_report() const { return block_info_report_; }
+    // Enable or disable collection of block-level test info
+    void set_collect_test_info(bool flag) { collect_test_info_ = flag; }
 
 private:
     // ===== 成员数据 =====
@@ -88,7 +102,8 @@ private:
 
     // 最近一次运行的计时结果
     std::vector<LevelTiming> timing_report_;
-    std::vector<std::vector<std::pair<int, double>>> blockD_report_;
+    std::vector<std::vector<BlockTestInfo>> block_info_report_; // populated only when test info is requested
+    bool collect_test_info_ = false;                            // toggled by callers that need detailed diagnostics
 
 private:
     // ===== 内部工具 =====
