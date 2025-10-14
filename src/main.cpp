@@ -75,6 +75,11 @@ int main()
         batch.run_all();
     }
 
+    // 全局 RBF 测试样例
+    RBFTest::run_global_test("data/onera_m6_2M4.su2",
+                             "output/onera_m6_experiments_build_all.su2",
+                             1e-3, State{});
+
     capture.stop();
     capture.dump_to_stream(std::cout);
 
