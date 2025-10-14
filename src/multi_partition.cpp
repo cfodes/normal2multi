@@ -423,6 +423,7 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
     }
 
     // ★ 根据是不是最后一层，调用不同的 set_block_rbf
+    const bool use_greedy = use_greedy_intermediate_ && (lvl < levels_ - 1);
     if (lvl < levels_ - 1) {
         // 非最后一层：用 unique_bndry + block_D
         set_block_rbf(block_rbf_per_level_[lvl], unique_boundary_per_level_[lvl], blks);
@@ -439,16 +440,16 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
         }
     }
 
-    // 每块做一次 Greedy_algorithm（使用 external_suppoints）
-    for (int i = 0; i < nb; ++i) {
-       rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
+    if (use_greedy) {
+        for (int i = 0; i < nb; ++i) {
+            rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
+        }
+    } else {
+        constexpr double kReg = 1e-12; // 矩阵迭代求解误差
+        for (int i = 0; i < nb; ++i) {
+            rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
+        }
     }
-
-    // // ---- 每块直接一次性构建（使用已填充的 external_suppoints）----
-    // constexpr double kReg = 1e-12; // 矩阵迭代求解误差
-    // for (int i = 0; i < nb; ++i) {
-    //     rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
-    // }
 
     if (collect_test_info_ && block_info_report_.size() > static_cast<std::size_t>(lvl)) {
         // Record resulting support count per block for diagnostics

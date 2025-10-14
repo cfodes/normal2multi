@@ -50,6 +50,7 @@ void TestDriver::run_multi_partition()
 {
     multi_partition mp(parts_per_level_);
     mp.set_collect_test_info(collect_test_info_);
+    mp.set_greedy_intermediate(use_greedy_intermediate_);
     mp.set_m_nd2wall_lvl_mp(nd2wall_lvl_);
 
 

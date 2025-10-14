@@ -24,6 +24,7 @@ public:
     const std::vector<std::vector<BlockTestInfo>>& get_last_block_info_report() const { return last_block_info_report_; }
     // Switch on/off collection of extra test diagnostics
     void set_collect_test_info(bool flag) { collect_test_info_ = flag; }
+    void set_use_greedy_intermediate(bool flag) { use_greedy_intermediate_ = flag; }
 
 private:
     // === 输入输出 ===
@@ -41,6 +42,7 @@ private:
     std::vector<LevelTiming> last_timing_report_;
     std::vector<std::vector<BlockTestInfo>> last_block_info_report_;
     bool collect_test_info_ = false; // keeps track of whether the next run() should gather test diagnostics
+    bool use_greedy_intermediate_ = false;
  
     // === 核心流程 ===
     void read_mesh();     // 读取网格文件

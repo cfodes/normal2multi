@@ -62,7 +62,8 @@ MultiPartitionBatch::MultiPartitionBatch(std::string test_name,
 
 void MultiPartitionBatch::add_case(const std::string& run_name,
                                    const std::vector<idx_t>& parts,
-                                   const std::vector<double>& tolerances)
+                                   const std::vector<double>& tolerances,
+                                   bool greedy_intermediate)
 {
     if (run_name.empty()) {
         throw std::invalid_argument("run_name must not be empty");
@@ -73,7 +74,7 @@ void MultiPartitionBatch::add_case(const std::string& run_name,
     if (tolerances.size() != parts.size()) {
         throw std::invalid_argument("parts and tolerances must have the same length");
     }
-    cases_.push_back(PartitionBatchCase{run_name, parts, tolerances});
+    cases_.push_back(PartitionBatchCase{run_name, parts, tolerances, greedy_intermediate});
 }
 
 void MultiPartitionBatch::clear_cases()
@@ -172,6 +173,7 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
 
         TestDriver driver(resolved_input.string(), output_path.string(), c.parts, c.tolerances);
         driver.set_collect_test_info(generate_test_info);
+        driver.set_use_greedy_intermediate(c.greedy_intermediate);
         driver.run();
         std::cout << "[MultiPartitionBatch] <<< Finished case '" << c.run_name << "'"
                   << std::endl;
