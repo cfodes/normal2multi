@@ -167,12 +167,14 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
         }
         const fs::path output_path = base_dir / file_name;
 
-        std::cout << "[MultiPartitionBatch] Running case '" << c.run_name
+        std::cout << "[MultiPartitionBatch] >>> Start case '" << c.run_name
                   << "' -> " << output_path.string() << std::endl;
 
         TestDriver driver(resolved_input.string(), output_path.string(), c.parts, c.tolerances);
         driver.set_collect_test_info(generate_test_info);
         driver.run();
+        std::cout << "[MultiPartitionBatch] <<< Finished case '" << c.run_name << "'"
+                  << std::endl;
         reports.emplace_back(c.run_name, driver.get_last_timing_report());
         if (generate_test_info) {
             block_reports.push_back(BlockReport{c.run_name, c.parts, driver.get_last_block_info_report()});
