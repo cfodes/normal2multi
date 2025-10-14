@@ -68,7 +68,7 @@ int main()
                    {1e-3, 1e-3, 1e-3, 1e-3},
                    true);
 
-    const bool run_test_mode = true; // flip to false once test-info output is no longer needed
+    const bool run_test_mode = false; // 需要导出测试信息时改为 true
     if (run_test_mode) {
         batch.run_all_with_test_info();
     } else {

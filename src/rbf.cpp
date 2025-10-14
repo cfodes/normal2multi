@@ -60,14 +60,16 @@ void RBFInterpolator::calculate_df(const vector<Eigen::VectorXd> &coeff, const v
 
 // 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统设置external_suppoints的情况
 void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪心算法选择支撑点并且计算，该算法适用于rbf系统已设置external_suppoints的情况
-                                                                   // 传入参数：误差 tol
-                                                                   //          参数结构体 S
+                                                                  // 传入参数：误差 tol
+                                                                  //          参数结构体 S
 {
     // std::cout << "=====================" << endl;
     // std::cout << "Starting Greedy algorithm ... " << std::endl;
 
     interp_tol.resize(external_suppoints.size());
     P_df = external_suppoints;
+    max_tol_step.clear();
+    max_tol_step.reserve(external_suppoints.size());
     int n = 0; // 支撑点数，也是插值系统的维度
     double eta_ij = 0;
     int max_tol_id = 0;
@@ -135,6 +137,11 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
                 std::cout << "every boundary nodes have been chosen (this will happen especially when the nodes are selected in boundary nodes shared by blocks)" << std::endl;
             }
         }
+        max_tol_step.push_back(interp_tol[max_tol_id]);
+        if (interp_tol[max_tol_id] < tol)
+        {
+            break;
+        }
     }
 }
 
@@ -148,6 +155,8 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
 
     interp_tol.resize(wall_nodes.size());
     P_df = wall_nodes;
+    max_tol_step.clear();
+    max_tol_step.reserve(wall_nodes.size());
     int n = 0; // 支撑点数，也是插值系统的维度
     double eta_ij = 0;
     int max_tol_id = 0;
@@ -215,6 +224,11 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
                 // std::cout << "every boundary nodes have been chosen (this will happen especially when the nodes are selected in boundary nodes shared by blocks)" << std::endl;
             }
         }
+        max_tol_step.push_back(interp_tol[max_tol_id]);
+        if (interp_tol[max_tol_id] < tol)
+        {
+            break;
+        }
     }
 }
 
@@ -232,6 +246,7 @@ void RBFInterpolator::BuildAll(const std::vector<Node>& candidates, const State&
     // 1) 绑定支撑点：把候选点直接作为支撑点
     suppoints = candidates;
     const int n = static_cast<int>(suppoints.size());
+    max_tol_step.clear();
 
     // 若没有支撑点，清空线性系统并返回
     if (n == 0) {
