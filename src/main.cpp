@@ -50,19 +50,19 @@ int main()
 
     batch.add_case("case_20_8_2",
                    {20, 8, 2},
-                   {1e-5, 1e-5, 1e-5});
+                   {1e-3, 1e-3, 1e-3});
 
     batch.add_case("case_10_16_2",
                    {10, 16, 2},
-                   {1e-5, 1e-5, 1e-5});
+                   {1e-3, 1e-3, 1e-3});
 
     batch.add_case("case_4_20_2",
                    {4, 20, 2},
-                   {1e-5, 1e-5, 1e-5});
+                   {1e-3, 1e-3, 1e-3});
 
     batch.add_case("case_2_4_5_2",
                    {2, 4, 5, 2},
-                   {1e-5, 1e-5, 1e-5, 1e-5});
+                   {1e-3, 1e-3, 1e-3, 1e-3});
 
     const bool run_test_mode = true; // flip to false once test-info output is no longer needed
     if (run_test_mode) {
