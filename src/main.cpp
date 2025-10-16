@@ -15,56 +15,56 @@ struct GlobalExampleConfig {
 
 MultiPartitionBatch make_buildall_example()
 {
-    MultiPartitionBatch batch("onera_m6_buildall",
+    MultiPartitionBatch batch("onera_m6_2M4_buildall",
                               "data/onera_m6_2M4.su2");
 
-    batch.add_case("case_40_8_2",
-                   {40, 8, 2},
-                   {1e-3, 1e-3, 1e-3},
+    batch.add_case("case_80_16_2",
+                   {80, 16, 2},
+                   {1e-4, 1e-4, 1e-5},
                    false);
 
-    batch.add_case("case_20_16_2",
-                   {20, 16, 2},
-                   {1e-3, 1e-3, 1e-3},
-                   false);
+    //batch.add_case("case_20_20_2",
+    //               {20, 20, 2},
+    //               {1e-3, 1e-3, 1e-3},
+    //               false);
 
-    batch.add_case("case_10_32_2",
-                   {10, 32, 2},
-                   {1e-3, 1e-3, 1e-3},
-                   false);
+    //batch.add_case("case_10_30_2",
+    //               {10, 30, 2},
+    //               {1e-3, 1e-3, 1e-3},
+    //               false);
 
-    batch.add_case("case_2_4_5_2",
-                   {2, 4, 5, 2},
-                   {1e-3, 1e-3, 1e-3, 1e-3},
-                   false);
+    //batch.add_case("case_2_4_5_2",
+    //               {2, 4, 5, 2},
+    //               {1e-3, 1e-3, 1e-3, 1e-3},
+    //               false);
 
     return batch;
 }
 
 MultiPartitionBatch make_greedy_example()
 {
-    MultiPartitionBatch batch("onera_m6_greedy",
+    MultiPartitionBatch batch("onera_m6_2M4_greedy",
                               "data/onera_m6_2M4.su2");
 
-    batch.add_case("greedy_40_8_2",
-                   {40, 8, 2},
-                   {1e-4, 1e-4, 1e-3},
+    batch.add_case("greedy_80_16_2",
+                   {80, 16, 2},
+                   {1e-4, 1e-4, 1e-5},
                    true);
 
-    batch.add_case("greedy_20_16_2",
-                   {20, 16, 2},
-                   {1e-4, 1e-4, 1e-3},
-                   true);
+    //batch.add_case("greedy_20_20_2",
+    //               {20, 20, 2},
+    //               {1e-4, 1e-4, 1e-3},
+    //               true);
 
-    batch.add_case("greedy_10_32_2",
-                   {10, 32, 2},
-                   {1e-4, 1e-4, 1e-3},
-                   true);
+    //batch.add_case("greedy_10_30_2",
+    //               {10, 30, 2},
+    //               {1e-4, 1e-4, 1e-3},
+    //               true);
 
-    batch.add_case("greedy_2_4_5_2",
-                   {2, 4, 5, 2},
-                   {1e-4, 1e-4, 1e-4, 1e-3},
-                   true);
+    //batch.add_case("greedy_2_4_5_2",
+    //               {2, 4, 5, 2},
+    //               {1e-4, 1e-4, 1e-4, 1e-3},
+    //               true);
 
     return batch;
 }
@@ -74,7 +74,7 @@ GlobalExampleConfig make_global_example()
     return GlobalExampleConfig{
         "data/onera_m6_2M4.su2",
         "output/onera_m6_global_result.su2",
-        1e-3
+        1e-5
     };
 }
 
@@ -102,9 +102,16 @@ int main()
     StreamCapture capture(std::cout);
 
     // === 可切换的测试案例 ===
+    const bool run_global_example_case = true; // 全局 RBF 测试示例
     const bool run_buildall_example = true;   // 分组RBF传统方法示例
     const bool run_greedy_example = true;     // 分组RBF贪心算法示例
-    const bool run_global_example_case = true; // 全局 RBF 测试示例
+    
+
+    
+
+    if (run_global_example_case) {
+        run_global_example(make_global_example());
+    }
 
     if (run_buildall_example) {
         run_batch_example(make_buildall_example(), false);
@@ -112,10 +119,6 @@ int main()
 
     if (run_greedy_example) {
         run_batch_example(make_greedy_example(), true);
-    }
-
-    if (run_global_example_case) {
-        run_global_example(make_global_example());
     }
 
     capture.stop();

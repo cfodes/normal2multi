@@ -1,0 +1,13 @@
+# 默认忽略所有文件
+/*
+
+# 保留 Git 配置文件
+!/.gitignore
+
+# 仅允许 include 和 src 目录上传
+!/include/
+!/src/
+
+# include / src 下的所有内容
+!/include/**
+!/src/**
