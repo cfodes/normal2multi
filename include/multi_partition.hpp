@@ -44,6 +44,26 @@ public:
     // 获取在第 lvl 层，一个 unique 边界节点 id 所在的所有分区编号
     const std::vector<int>& query_unique_bndry2blkid(size_t lvl, int nd_id) const;
 
+    // 分级计时信息
+    struct LevelTiming {
+        double preprocess_ms = 0.0;
+        double build_rbf_ms = 0.0;
+        double compute_df_ms = 0.0;
+        double update_coords_ms = 0.0;
+        double distance_search_ms = 0.0;
+        double drrbf_deform_ms = 0.0;
+    };
+
+    // 分级统计信息
+    struct LevelStatistics {
+        size_t partitions = 0;
+        size_t candidate_points = 0;
+        size_t support_points = 0;
+    };
+
+    const std::vector<LevelTiming>& get_level_timings() const { return level_timings_; }
+    const std::vector<LevelStatistics>& get_level_statistics() const { return level_statistics_; }
+
 private:
     // ===== 成员数据 =====
     size_t levels_;                               // 层数
@@ -71,6 +91,10 @@ private:
 
     // 前置构建：unique 边界到分区编号的映射（按层存）
     std::vector<std::unordered_map<int, std::vector<int>>> unique_bndry2blkid_per_lvl_;
+
+    // 计时和统计数据
+    std::vector<LevelTiming> level_timings_;
+    std::vector<LevelStatistics> level_statistics_;
 
 private:
     // ===== 内部工具 =====

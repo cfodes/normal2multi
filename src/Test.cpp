@@ -1,9 +1,13 @@
 #include "Test.hpp"
 #include "meshio.hpp"
 #include "geometry.hpp"
-#include <iostream>
-#include <ctime>
 #include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <system_error>
 using namespace std::chrono;
 
 void RBFTest::run_global_test(const std::string& input_file,
@@ -45,4 +49,30 @@ void RBFTest::run_global_test(const std::string& input_file,
     writefile(output_file, d_S);
     std::cout << "Deformed mesh written to: " << output_file << std::endl;
     std::cout << "=====================================\n";
+
+    namespace fs = std::filesystem;
+    fs::path out_path(output_file);
+    fs::path out_dir = out_path.parent_path();
+    if (out_dir.empty()) {
+        out_dir = fs::path{"."};
+    }
+
+    std::error_code ec;
+    fs::create_directories(out_dir, ec);
+    if (ec) {
+        std::cerr << "Failed to create output directory " << out_dir << ": " << ec.message() << '\n';
+    }
+
+    const std::string base_name = out_path.stem().string();
+    const fs::path info_file = out_dir / (base_name + "_info.dat");
+
+    std::ofstream ofs(info_file);
+    if (!ofs.is_open()) {
+        std::cerr << "Failed to write global info to " << info_file << '\n';
+        return;
+    }
+
+    ofs << std::fixed << std::setprecision(6);
+    ofs << "wall_nodes " << wall_nodes.size() << '\n';
+    ofs << "support_points " << rbf.suppoints.size() << '\n';
 }

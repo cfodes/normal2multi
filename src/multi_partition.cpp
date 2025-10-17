@@ -135,6 +135,9 @@ void multi_partition::multi_partition_rbf_algorithm(
   // 检查误差设置的级数与分区的级数是否一致
   assert(tol_steps.size() == levels_ && "tol_steps size must match levels");
 
+  level_timings_.assign(levels_, LevelTiming{});
+  level_statistics_.assign(levels_, LevelStatistics{});
+
   set_wall_id2nodes(wall_id2nodes_, wall_nodes); // 构建物面的索引和id的查找集
   std::vector<Node> wall_accurate = set_accurate_wall(
       wall_nodes); // 根据物面节点初始位置和待变形量计算准确的变形结果
@@ -163,6 +166,7 @@ void multi_partition::multi_partition_rbf_algorithm(
       const auto t_pre_end = high_resolution_clock::now();
       const double ms = duration<double, std::milli>(t_pre_end - t_pre_start).count();
       std::cout << "[lvl=" << lvl << "] preprocess time: " << ms << " ms\n";
+      level_timings_[lvl].preprocess_ms = ms;
     }
 
     // 步骤 1: 构建 RBF 插值系统（第0层只有1个系统，从第1层开始每个块一个）
@@ -174,9 +178,33 @@ void multi_partition::multi_partition_rbf_algorithm(
     }
     //插值系统计时结束
     const auto t_build_end = high_resolution_clock::now();
+    const double build_ms =
+        duration<double, std::milli>(t_build_end - t_build_start).count();
     std::cout << "[lvl=" << lvl << "] build RBF system time: "
-        << duration<double, std::milli>(t_build_end - t_build_start).count()
-        << " ms\n";
+              << build_ms << " ms\n";
+    level_timings_[lvl].build_rbf_ms = build_ms;
+
+    // 更新统计信息
+    auto &lvl_stat = level_statistics_.at(lvl);
+    lvl_stat.partitions = blocks_per_level_.at(lvl).size();
+    size_t candidate_points = 0;
+    size_t support_points = 0;
+    if (lvl == 0) {
+      if (lvl < unique_boundary_per_level_.size()) {
+        for (const auto &per_parent : unique_boundary_per_level_.at(lvl)) {
+          candidate_points += per_parent.size();
+        }
+      }
+    } else {
+      for (const auto &rbf : rbf_systems_per_level_[lvl]) {
+        candidate_points += rbf.external_suppoints.size();
+      }
+    }
+    for (const auto &rbf : rbf_systems_per_level_[lvl]) {
+      support_points += rbf.suppoints.size();
+    }
+    lvl_stat.candidate_points = candidate_points;
+    lvl_stat.support_points = support_points;
 
     // 步骤 2: 执行节点变形量计算
     const auto t_df_start = high_resolution_clock::now();  //变形量计算计时开始
@@ -188,18 +216,22 @@ void multi_partition::multi_partition_rbf_algorithm(
     }
     //变形量计算计时结束
     const auto t_df_end = high_resolution_clock::now();
+    const double compute_ms =
+        duration<double, std::milli>(t_df_end - t_df_start).count();
     std::cout << "[lvl=" << lvl << "] compute df time: "
-        << duration<double, std::milli>(t_df_end - t_df_start).count()
-        << " ms\n";
+              << compute_ms << " ms\n";
+    level_timings_[lvl].compute_df_ms = compute_ms;
 
     // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
     const auto t_update_start = high_resolution_clock::now();  //计算节点坐标计时开始
     calculate_deformed_coordinates(all_nodes_coords);
     //计算节点坐标计时结束
     const auto t_update_end = high_resolution_clock::now();
+    const double update_ms =
+        duration<double, std::milli>(t_update_end - t_update_start).count();
     std::cout << "[lvl=" << lvl << "] update coordinates time: "
-        << duration<double, std::milli>(t_update_end - t_update_start).count()
-        << " ms\n";
+              << update_ms << " ms\n";
+    level_timings_[lvl].update_coords_ms = update_ms;
   }
 }
 
@@ -406,35 +438,55 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
 {
     const auto& blks = blocks_per_level_.at(lvl);   // 当前层的所有分区
     auto& calculators = block_rbf_per_level_.at(lvl);  // 当前层的所有 RBF 计算器
+    struct NodeTask {
+        Node* node = nullptr;
+        int moving_blk_id = 0;
+        double d_r2omega1 = 0.0;
+        double d_r2omega2 = 0.0;
+        bool skip = false;
+    };
+    std::vector<NodeTask> tasks;
+    tasks.reserve(coords.size());
 
+    const auto t_search_start = high_resolution_clock::now();
     for (auto& inode : coords) {
-        //// 节点等级过滤，用于加速DDRBF计算
-        //auto it_lvl = m_nd2wall_lvl_mp_.find(inode.id);
-        //if (it_lvl != m_nd2wall_lvl_mp_.end()) {
-        //    int node_lvl = it_lvl->second;
-        //    if (node_lvl > 3 - static_cast<int>(lvl)) {
-        //        continue;  // 等级过高，本层不处理
-        //    }
-        //}
+        NodeTask task;
+        task.node = &inode;
 
         // --- 查找动边界和静边界 ---
-        int    moving_blk_id = 0;
-        double d_r2omega1 = 0.0;    // 最近 block 的距离（动边界）
-        double d_r2omega2 = 1.0e10; // 次近 block / global_unique_bndry 距离（静边界）
-
         find_moving_and_static_bndry(inode, blks,
-                                     moving_blk_id, d_r2omega1, d_r2omega2);   //查找最近的动边界和静边界
+                                     task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);   //查找最近的动边界和静边界
 
         // --- 历史 unique_bndry 节点不再变形 ---
         if (global_unique_bndry_set_.find(inode.id) != global_unique_bndry_set_.end()) {
             inode.df.setZero();
-            continue;
+            task.skip = true;
         }
 
-        // --- 执行 DRRBF 变形 ---
-        calculators[moving_blk_id].calculate_deform_DRRBF(
-            inode, d_r2omega1, d_r2omega2, blks[moving_blk_id].block_D, S);
+        tasks.push_back(task);
     }
+    const auto t_search_end = high_resolution_clock::now();
+    const double search_ms =
+        duration<double, std::milli>(t_search_end - t_search_start).count();
+    level_timings_[lvl].distance_search_ms = search_ms;
+    std::cout << "[lvl=" << lvl << "] DRRBF distance search time: "
+              << search_ms << " ms\n";
+
+    const auto t_deform_start = high_resolution_clock::now();
+    for (auto& task : tasks) {
+        if (task.skip) {
+            continue;
+        }
+        calculators[task.moving_blk_id].calculate_deform_DRRBF(
+            *(task.node), task.d_r2omega1, task.d_r2omega2,
+            blks[task.moving_blk_id].block_D, S);
+    }
+    const auto t_deform_end = high_resolution_clock::now();
+    const double deform_ms =
+        duration<double, std::milli>(t_deform_end - t_deform_start).count();
+    level_timings_[lvl].drrbf_deform_ms = deform_ms;
+    std::cout << "[lvl=" << lvl << "] DRRBF deform time: "
+              << deform_ms << " ms\n";
 }
 
 
