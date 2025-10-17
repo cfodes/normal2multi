@@ -21,7 +21,7 @@ struct PartitionBatchCase
     std::string run_name;              // 个案名称，用于生成文件名
     std::vector<idx_t> parts;          // 分组设置
     std::vector<double> tolerances;    // 误差容限
-    bool greedy_intermediate = false;  // 是否在非末级使用贪心选点
+    bool use_greedy_nonfinal = false;  // 是否在非最终层使用贪心选点
 };
 
 class MultiPartitionBatch
@@ -35,7 +35,7 @@ public:
     void add_case(const std::string& run_name,
                   const std::vector<idx_t>& parts,
                   const std::vector<double>& tolerances,
-                  bool greedy_intermediate = false);
+                  bool use_greedy_nonfinal = false);
 
     // 清空已添加的配置
     void clear_cases();

@@ -397,14 +397,31 @@ void multi_partition::build_single_rbf_system(double tol, const State &S,
   block_rbf_per_level_[lvl].clear();
   block_rbf_per_level_[lvl].emplace_back(rbf_systems_per_level_[lvl][0]);
 
-  // 直接调用“未预设 external_suppoints”的 Greedy 版本
-  rbf_systems_per_level_[lvl][0].Greedy_algorithm(
-     unique_boundary_per_level_.at(lvl).at(0), tol, S);
+  const bool use_greedy = use_greedy_nonfinal_;
+  const auto &candidates = unique_boundary_per_level_.at(lvl).at(0);
+  if (use_greedy) {
+    // 未预设 external_suppoints 的贪心构建
+    rbf_systems_per_level_[lvl][0].Greedy_algorithm(candidates, tol, S);
+  } else {
+    constexpr double kReg = 1e-12; // 矩阵迭代求解误差
+    rbf_systems_per_level_[lvl][0].BuildAll(candidates, S, kReg);
+  }
 
-  // // ---- 直接用所有候选点一次性构建（不使用贪心）----
-  // constexpr double kReg = 1e-12; // 矩阵迭代求解误差
-  // rbf_systems_per_level_[lvl][0].BuildAll(
-  //     unique_boundary_per_level_.at(lvl).at(0), S, kReg);
+  if (collect_test_info_) {
+    if (block_info_report_.size() <= lvl) {
+      block_info_report_.resize(levels_);
+    }
+    auto &lvl_report = block_info_report_[lvl];
+    if (lvl_report.empty()) {
+      // Level-0 只构建一个全局 RBF 系统，这里放入占位条目以便写出 XLSX。
+      lvl_report.push_back(BlockTestInfo{0, 0, 0, 0, 0.0});
+    }
+    auto &entry = lvl_report.front();
+    entry.candidate_points =
+        candidates.size();
+    entry.support_points = rbf_systems_per_level_[lvl][0].suppoints.size();
+  }
+
 }
 
 // ===== 第 ≥1 层：每块一个 RBF 系统 =====
@@ -422,9 +439,11 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
         block_rbf_per_level_[lvl].emplace_back(rbf_systems_per_level_[lvl][i]);
     }
 
+    const bool is_last_level = (lvl == levels_ - 1);
+    const bool use_greedy = is_last_level ? true : use_greedy_nonfinal_; // 最后一层强制使用贪心
+
     // ★ 根据是不是最后一层，调用不同的 set_block_rbf
-    const bool use_greedy = use_greedy_intermediate_ && (lvl < levels_ - 1);
-    if (lvl < levels_ - 1) {
+    if (!is_last_level) {
         // 非最后一层：用 unique_bndry + block_D
         set_block_rbf(block_rbf_per_level_[lvl], unique_boundary_per_level_[lvl], blks);
     } else {
@@ -445,6 +464,7 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
             rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
         }
     } else {
+        // 只有非最终层才可能走到 BuildAll 分支
         constexpr double kReg = 1e-12; // 矩阵迭代求解误差
         for (int i = 0; i < nb; ++i) {
             rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);

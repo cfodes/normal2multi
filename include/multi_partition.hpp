@@ -71,8 +71,8 @@ public:
     const std::vector<std::vector<BlockTestInfo>>& block_info_report() const { return block_info_report_; }
     // Enable or disable collection of block-level test info
     void set_collect_test_info(bool flag) { collect_test_info_ = flag; }
-    // Control whether mid-level partitions build RBF systems via greedy selection
-    void set_greedy_intermediate(bool flag) { use_greedy_intermediate_ = flag; }
+    // Control whether non-final levels (including level 0) build RBF systems via greedy selection
+    void set_use_greedy(bool flag) { use_greedy_nonfinal_ = flag; }
 
 private:
     // ===== 成员数据 =====
@@ -106,7 +106,7 @@ private:
     std::vector<LevelTiming> timing_report_;
     std::vector<std::vector<BlockTestInfo>> block_info_report_; // populated only when test info is requested
     bool collect_test_info_ = false;                            // toggled by callers that need detailed diagnostics
-    bool use_greedy_intermediate_ = false;                      // 是否在非末级使用贪心法构建块内RBF
+    bool use_greedy_nonfinal_ = false;                          // 是否在非最终层（含第0层）使用贪心法构建RBF
 
 private:
     // ===== 内部工具 =====

@@ -18,9 +18,20 @@ void RBFTest::run_global_test(const std::string& input_file,
 {
     std::cout << "\n========== Global RBF Test ==========\n";
 
-    // 1. 读取网格
+    // 1. 读取网格（支持从 build/ 运行，优先解析 ../data/...）
     State d_S = S;
-    readfile(input_file, d_S);
+    namespace fs = std::filesystem;
+    fs::path in_path(input_file);
+    if (!fs::exists(in_path)) {
+        const std::vector<fs::path> candidates = {
+            fs::path("..") / in_path,
+            fs::path("./") / in_path
+        };
+        for (const auto& p : candidates) {
+            if (fs::exists(p)) { in_path = p; break; }
+        }
+    }
+    readfile(in_path.string(), d_S);
 
     // 2. 提取物面节点
     int wall_id = 0;
@@ -33,7 +44,6 @@ void RBFTest::run_global_test(const std::string& input_file,
     calculat_wall_deformation(wall_nodes, d_S.D);
     std::cout << "Wall deformation set. D = " << d_S.D << std::endl;
 
-    namespace fs = std::filesystem;
     const fs::path output_path(output_file);
     fs::path output_parent = output_path.parent_path();
     if (output_parent.empty()) {
@@ -124,7 +134,7 @@ MultiPartitionBatch::MultiPartitionBatch(std::string test_name,
 void MultiPartitionBatch::add_case(const std::string& run_name,
                                    const std::vector<idx_t>& parts,
                                    const std::vector<double>& tolerances,
-                                   bool greedy_intermediate)
+                                   bool use_greedy_nonfinal)
 {
     if (run_name.empty()) {
         throw std::invalid_argument("run_name must not be empty");
@@ -135,7 +145,7 @@ void MultiPartitionBatch::add_case(const std::string& run_name,
     if (tolerances.size() != parts.size()) {
         throw std::invalid_argument("parts and tolerances must have the same length");
     }
-    cases_.push_back(PartitionBatchCase{run_name, parts, tolerances, greedy_intermediate});
+    cases_.push_back(PartitionBatchCase{run_name, parts, tolerances, use_greedy_nonfinal});
 }
 
 void MultiPartitionBatch::clear_cases()
@@ -242,7 +252,7 @@ void MultiPartitionBatch::run_all_impl(bool generate_test_info) const
 
         TestDriver driver(resolved_input.string(), output_path.string(), c.parts, c.tolerances);
         driver.set_collect_test_info(generate_test_info);
-        driver.set_use_greedy_intermediate(c.greedy_intermediate);
+        driver.set_use_greedy(c.use_greedy_nonfinal);
         driver.run();
         std::cout << "[MultiPartitionBatch] <<< Finished case '" << c.run_name << "'"
                   << std::endl;
