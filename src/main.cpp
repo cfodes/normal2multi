@@ -1,114 +1,57 @@
 #include "test_driver.hpp"
 #include "Test.hpp"
-#include "StreamCapture.hpp"
-#include <vector>
-#include <string>
 #include <iostream>
-#include <exception>
+#include <metis.h>
+#include <string>
+#include <vector>
 
-int main() 
+struct PartitionCaseConfig {
+    std::string input_file;
+    std::string output_file;
+    std::vector<idx_t> parts;
+    std::vector<double> tol;
+};
+
+struct GlobalCaseConfig {
+    std::string input_file;
+    std::string output_file;
+    double tol;
+};
+
+int main()
 {
-    
-    StreamCapture capture(std::cout);
-
-    //// 算例Naca0012 C型网格 分组RBF算法
-    //// 输入文件
-    //std::string input_file = "D:/oujc/works/mesh_normal2multi/Project1/data/naca0012_Cmesh_test.su2";
-    //// 输出文件
-    //std::string output_file = "D:/oujc/works/mesh_normal2multi/Project1/output/naca0012_Cmesh_result.su2";
-    //// 设置分区数和误差容限
-    //std::vector<idx_t> parts{11,3,2};
-    //std::vector<double> tol{1e-14,1e-14,1e-7};
-
-    //// 算例ONERA M6混合网格 分组RBF算法
-    //// 输入文件
-    //std::string input_file = "../data/onera_m6_2M4.su2";
-    //// 输出文件
-    //std::string output_file = "../output/onera_m6_2M4_result.su2";
-    //// 设置分区数和误差容限
-    //std::vector<idx_t> parts{ 199,24,2 };
-    //std::vector<double> tol{ 1e-14,1e-14,1e-7 };
-
-    //// 算例ONERA M6结构网格 分组RBF算法
-    //// 输入文件
-    //std::string input_file = "../data/onera_m6_294K.su2";
-    //// 输出文件
-    //std::string output_file = "../output/onera_m6_294K_result.su2";
-    //// 设置分区数和误差容限
-    //std::vector<idx_t> parts{ 30,4,2 };
-    //std::vector<double> tol{ 1e-14,1e-14,1e-7 };
-
-    //TestDriver driver(input_file,
-    //                  output_file,
-    //                  parts, tol);
-    //driver.run();
-
-    MultiPartitionBatch batch(
-        "onera_m6_experiments",
-        "data/onera_m6_2M4.su2"
-    );
-
-    batch.add_case("case_20_8_2",
-                   {20, 8, 2},
-                   {1e-3, 1e-3, 1e-3},
-                   false);
-
-    batch.add_case("case_10_16_2",
-                   {10, 16, 2},
-                   {1e-3, 1e-3, 1e-3},
-                   true);
-
-    batch.add_case("case_4_20_2",
-                   {4, 20, 2},
-                   {1e-3, 1e-3, 1e-3},
-                   false);
-
-    batch.add_case("case_2_4_5_2",
-                   {2, 4, 5, 2},
-                   {1e-3, 1e-3, 1e-3, 1e-3},
-                   true);
-
-    const bool run_test_mode = false; // 需要导出测试信息时改为 true
-    if (run_test_mode) {
-        batch.run_all_with_test_info();
-    } else {
-        batch.run_all();
-    }
-
-    // 全局 RBF 测试样例
-    RBFTest::run_global_test("data/onera_m6_2M4.su2",
-                             "output/onera_m6_experiments_build_all.su2",
-                             1e-3, State{});
-
-    capture.stop();
-    capture.dump_to_stream(std::cout);
-
-    const std::string log_file = "run.log";
-    const std::vector<std::string> log_locations = {
-        "../output/" + log_file,
-        "output/" + log_file
+    std::vector<PartitionCaseConfig> partition_cases = {
+        {
+            "../data/onera_m6_294K.su2",
+            "../output/onera_m6_294K_result.su2",
+            {30, 4, 2},
+            {1e-14, 1e-14, 1e-7}
+        }
+        // 可以在此处继续添加更多分组算例
     };
 
-    bool saved = false;
-    for (const auto& path : log_locations) {
-        try {
-            capture.save_to_file(path);
-            saved = true;
-            break;
-        } catch (const std::exception&) {
-            // try next candidate
+    std::vector<GlobalCaseConfig> global_cases = {
+        {
+            "../data/onera_m6_294K.su2",
+            "../output/onera_m6_294K_global_result.su2",
+            1e-5
         }
+        // 可以在此处继续添加更多全局RBF算例
+    };
+
+    for (const auto& cfg : partition_cases) {
+        std::cout << "Running partitioned case with input: " << cfg.input_file
+                  << " -> output: " << cfg.output_file << '\n';
+        TestDriver driver(cfg.input_file, cfg.output_file, cfg.parts, cfg.tol);
+        driver.run();
     }
 
-    if (!saved) {
-        std::cerr << "Failed to write log file to output directory.\n";
+    State default_state;
+    for (const auto& cfg : global_cases) {
+        std::cout << "Running global RBF case with input: " << cfg.input_file
+                  << " -> output: " << cfg.output_file << '\n';
+        RBFTest::run_global_test(cfg.input_file, cfg.output_file, cfg.tol, default_state);
     }
-
-    //// 算例ONERA M6纯RBF方法
-    //State _S;
-    //RBFTest::run_global_test("../data/onera_m6_294K.su2",
-    //    "../output/onera_m6_294K_result.su2",
-    //    1e-5, _S);
 
     return 0;
 }

@@ -5,34 +5,12 @@
 #include <unordered_set>
 #include <metis.h>
 #include <cassert>
-#include <utility>
-#include <cstddef>
 #include "geometry.hpp"
 #include "distance.hpp"
 #include "block.hpp"          // mesh_block / Reset_blocks
 #include "rbf.hpp"            // RBFInterpolator / DeformCalculator / free set_block_rbf(...)
 #include "metis_block.hpp"
 #include "State.hpp"
-
-// Holds per-level timing statistics for profiling
-struct LevelTiming {
-    double preprocess_ms = 0.0;
-    double build_ms = 0.0;
-    double compute_ms = 0.0;
-    double update_ms = 0.0;
-    double distance_ms = 0.0;
-    double apply_ms = 0.0;
-    double max_block_D = 0.0;
-};
-
-// Extra diagnostics collected in test mode
-struct BlockTestInfo {
-    int block_id = -1;
-    std::size_t internal_points = 0;
-    std::size_t candidate_points = 0;
-    std::size_t support_points = 0;
-    double block_D = 0.0;
-};
 
 // 多级 METIS 分区 + 分组 RBF 主控类
 class multi_partition {
@@ -66,13 +44,25 @@ public:
     // 获取在第 lvl 层，一个 unique 边界节点 id 所在的所有分区编号
     const std::vector<int>& query_unique_bndry2blkid(size_t lvl, int nd_id) const;
 
-    // Accessors for the latest reports (timing + optional block diagnostics)
-    const std::vector<LevelTiming>& last_timing_report() const { return timing_report_; }
-    const std::vector<std::vector<BlockTestInfo>>& block_info_report() const { return block_info_report_; }
-    // Enable or disable collection of block-level test info
-    void set_collect_test_info(bool flag) { collect_test_info_ = flag; }
-    // Control whether mid-level partitions build RBF systems via greedy selection
-    void set_greedy_intermediate(bool flag) { use_greedy_intermediate_ = flag; }
+    // 分级计时信息
+    struct LevelTiming {
+        double preprocess_ms = 0.0;
+        double build_rbf_ms = 0.0;
+        double compute_df_ms = 0.0;
+        double update_coords_ms = 0.0;
+        double distance_search_ms = 0.0;
+        double drrbf_deform_ms = 0.0;
+    };
+
+    // 分级统计信息
+    struct LevelStatistics {
+        size_t partitions = 0;
+        size_t candidate_points = 0;
+        size_t support_points = 0;
+    };
+
+    const std::vector<LevelTiming>& get_level_timings() const { return level_timings_; }
+    const std::vector<LevelStatistics>& get_level_statistics() const { return level_statistics_; }
 
 private:
     // ===== 成员数据 =====
@@ -102,11 +92,9 @@ private:
     // 前置构建：unique 边界到分区编号的映射（按层存）
     std::vector<std::unordered_map<int, std::vector<int>>> unique_bndry2blkid_per_lvl_;
 
-    // 最近一次运行的计时结果
-    std::vector<LevelTiming> timing_report_;
-    std::vector<std::vector<BlockTestInfo>> block_info_report_; // populated only when test info is requested
-    bool collect_test_info_ = false;                            // toggled by callers that need detailed diagnostics
-    bool use_greedy_intermediate_ = false;                      // 是否在非末级使用贪心法构建块内RBF
+    // 计时和统计数据
+    std::vector<LevelTiming> level_timings_;
+    std::vector<LevelStatistics> level_statistics_;
 
 private:
     // ===== 内部工具 =====
@@ -128,7 +116,7 @@ private:
     void update_unique_bndry_nodes(const std::vector<Node>& wall_prev, int lvl);
 
     // 用 wall_prev 更新本层 blocks 的节点待变形量，并重建块的 kd-tree（并计算 block_D）
-    double set_blocks_df_and_tree(const std::vector<Node>& wall_prev, int lvl);
+    void set_blocks_df_and_tree(const std::vector<Node>& wall_prev, int lvl);
 
     // 第 0 层：建立全局 RBF 系统（用本层收集到的 unique 边界点作为候选集）
     void build_single_rbf_system(double tol, const State& S, size_t lvl);
@@ -142,8 +130,7 @@ private:
 
     // 第 ≥1 层：DRRBF（考虑动/静边界距离）
     void apply_drrbf_deformation(std::vector<Node>& coords,
-                                 const State& S, size_t lvl,
-                                 LevelTiming& timing_row);
+                                 const State& S, size_t lvl);
 
     // 组建“历史 unique 边界” kd-tree（供静边界距离查询）
     void set_unique_bndry_tree(size_t lvl,

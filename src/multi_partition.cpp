@@ -135,19 +135,14 @@ void multi_partition::multi_partition_rbf_algorithm(
   // 检查误差设置的级数与分区的级数是否一致
   assert(tol_steps.size() == levels_ && "tol_steps size must match levels");
 
+  level_timings_.assign(levels_, LevelTiming{});
+  level_statistics_.assign(levels_, LevelStatistics{});
+
   set_wall_id2nodes(wall_id2nodes_, wall_nodes); // 构建物面的索引和id的查找集
   std::vector<Node> wall_accurate = set_accurate_wall(
       wall_nodes); // 根据物面节点初始位置和待变形量计算准确的变形结果
   std::vector<Node> wall_prev =
       wall_nodes; // 当前物面结果，第 0 层保持原始 wall
-
-  std::vector<LevelTiming> timing_report(levels_);
-  if (collect_test_info_) {
-    // Pre-size per-level block diagnostic container when test mode is on
-    block_info_report_.assign(levels_, {});
-  } else {
-    block_info_report_.clear();
-  }
 
   for (size_t lvl = 0; lvl < levels_; ++lvl) {
     const double tol = tol_steps[lvl];
@@ -163,16 +158,15 @@ void multi_partition::multi_partition_rbf_algorithm(
       // 更新已经用过的unique_bndry的位置，这些点已经准确变形，无需再变
       update_unique_bndry_nodes(wall_prev, static_cast<int>(lvl));
       // 根据更新后的wall_prev重新设置分区内部的节点待变形量，并且计算了分区的block_D!!!
-      const double max_block_D = set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
-      timing_report[lvl].max_block_D = max_block_D;
+      set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
       // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
       set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
 
       //预处理计时结束
       const auto t_pre_end = high_resolution_clock::now();
       const double ms = duration<double, std::milli>(t_pre_end - t_pre_start).count();
-      timing_report[lvl].preprocess_ms = ms;
       std::cout << "[lvl=" << lvl << "] preprocess time: " << ms << " ms\n";
+      level_timings_[lvl].preprocess_ms = ms;
     }
 
     // 步骤 1: 构建 RBF 插值系统（第0层只有1个系统，从第1层开始每个块一个）
@@ -184,11 +178,33 @@ void multi_partition::multi_partition_rbf_algorithm(
     }
     //插值系统计时结束
     const auto t_build_end = high_resolution_clock::now();
-    const double build_ms = duration<double, std::milli>(t_build_end - t_build_start).count();
-    timing_report[lvl].build_ms = build_ms;
+    const double build_ms =
+        duration<double, std::milli>(t_build_end - t_build_start).count();
     std::cout << "[lvl=" << lvl << "] build RBF system time: "
-        << build_ms
-        << " ms\n";
+              << build_ms << " ms\n";
+    level_timings_[lvl].build_rbf_ms = build_ms;
+
+    // 更新统计信息
+    auto &lvl_stat = level_statistics_.at(lvl);
+    lvl_stat.partitions = blocks_per_level_.at(lvl).size();
+    size_t candidate_points = 0;
+    size_t support_points = 0;
+    if (lvl == 0) {
+      if (lvl < unique_boundary_per_level_.size()) {
+        for (const auto &per_parent : unique_boundary_per_level_.at(lvl)) {
+          candidate_points += per_parent.size();
+        }
+      }
+    } else {
+      for (const auto &rbf : rbf_systems_per_level_[lvl]) {
+        candidate_points += rbf.external_suppoints.size();
+      }
+    }
+    for (const auto &rbf : rbf_systems_per_level_[lvl]) {
+      support_points += rbf.suppoints.size();
+    }
+    lvl_stat.candidate_points = candidate_points;
+    lvl_stat.support_points = support_points;
 
     // 步骤 2: 执行节点变形量计算
     const auto t_df_start = high_resolution_clock::now();  //变形量计算计时开始
@@ -196,37 +212,26 @@ void multi_partition::multi_partition_rbf_algorithm(
       apply_simple_rbf_deformation(all_nodes_coords, S, lvl);
     } else // 第 ≥1 层：DRRBF（考虑动/静边界距离）
     {
-      apply_drrbf_deformation(all_nodes_coords, S, lvl, timing_report[lvl]);
+      apply_drrbf_deformation(all_nodes_coords, S, lvl);
     }
     //变形量计算计时结束
     const auto t_df_end = high_resolution_clock::now();
-    const double compute_ms = duration<double, std::milli>(t_df_end - t_df_start).count();
-    timing_report[lvl].compute_ms = compute_ms;
+    const double compute_ms =
+        duration<double, std::milli>(t_df_end - t_df_start).count();
     std::cout << "[lvl=" << lvl << "] compute df time: "
-        << compute_ms
-        << " ms\n";
+              << compute_ms << " ms\n";
+    level_timings_[lvl].compute_df_ms = compute_ms;
 
     // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
     const auto t_update_start = high_resolution_clock::now();  //计算节点坐标计时开始
     calculate_deformed_coordinates(all_nodes_coords);
     //计算节点坐标计时结束
     const auto t_update_end = high_resolution_clock::now();
-    const double update_ms = duration<double, std::milli>(t_update_end - t_update_start).count();
-    timing_report[lvl].update_ms = update_ms;
+    const double update_ms =
+        duration<double, std::milli>(t_update_end - t_update_start).count();
     std::cout << "[lvl=" << lvl << "] update coordinates time: "
-        << update_ms
-        << " ms\n";
-  }
-
-  timing_report_.resize(timing_report.size());
-  for (size_t lvl = 0; lvl < timing_report.size(); ++lvl) {
-    timing_report_[lvl].preprocess_ms = timing_report[lvl].preprocess_ms;
-    timing_report_[lvl].build_ms = timing_report[lvl].build_ms;
-    timing_report_[lvl].compute_ms = timing_report[lvl].compute_ms;
-    timing_report_[lvl].update_ms = timing_report[lvl].update_ms;
-    timing_report_[lvl].distance_ms = timing_report[lvl].distance_ms;
-    timing_report_[lvl].apply_ms = timing_report[lvl].apply_ms;
-    timing_report_[lvl].max_block_D = timing_report[lvl].max_block_D;
+              << update_ms << " ms\n";
+    level_timings_[lvl].update_coords_ms = update_ms;
   }
 }
 
@@ -348,42 +353,18 @@ void multi_partition::update_unique_bndry_nodes(const std::vector<Node> &wall_pr
   }
 }
 
-double multi_partition::set_blocks_df_and_tree(const std::vector<Node> &wall_prev,
-                                               int lvl)
+void multi_partition::set_blocks_df_and_tree(const std::vector<Node> &wall_prev,
+                                             int lvl)
 // 计算当前级数下的blocks的节点的df并且构建相应的二叉树
 // wall_prev: 更新后的物面节点
 // lvl: 级数
 {
   auto &blks = blocks_per_level_.at(lvl);    //blks：当前层级的小分区数组
-  double max_block_D = 0.0;
-  if (collect_test_info_) {
-    // Prepare the current level's diagnostic storage
-    if (block_info_report_.size() <= static_cast<std::size_t>(lvl)) {
-      block_info_report_.resize(levels_);
-    }
-    auto &lvl_report = block_info_report_[lvl];
-    lvl_report.clear();
-    lvl_report.reserve(blks.size());
-    for (auto &b : blks) 
-    {
-      b.set_blk_nodes_df(wall_prev, wall_id2nodes_);     //根据已经更新的wall_prev设定blocks的节点待变形量
-      b.set_block_tree();
-      max_block_D = std::max(max_block_D, b.block_D);
-      lvl_report.push_back(BlockTestInfo{b.block_id,
-                                         b.internal_nodes.size(),
-                                         0,
-                                         0,
-                                         b.block_D});
-    }
-  } else {
-    for (auto &b : blks) 
-    {
-      b.set_blk_nodes_df(wall_prev, wall_id2nodes_);     //根据已经更新的wall_prev设定blocks的节点待变形量
-      b.set_block_tree();
-      max_block_D = std::max(max_block_D, b.block_D);
-    }
+  for (auto &b : blks) 
+  {
+    b.set_blk_nodes_df(wall_prev, wall_id2nodes_);     //根据已经更新的wall_prev设定blocks的节点待变形量
+    b.set_block_tree();
   }
-  return max_block_D;
 }
 
 // ===== 第 0 层：建立单个 RBF 系统 =====
@@ -397,14 +378,14 @@ void multi_partition::build_single_rbf_system(double tol, const State &S,
   block_rbf_per_level_[lvl].clear();
   block_rbf_per_level_[lvl].emplace_back(rbf_systems_per_level_[lvl][0]);
 
-  // 直接调用“未预设 external_suppoints”的 Greedy 版本
-  rbf_systems_per_level_[lvl][0].Greedy_algorithm(
-     unique_boundary_per_level_.at(lvl).at(0), tol, S);
+  //// 直接调用“未预设 external_suppoints”的 Greedy 版本
+  //rbf_systems_per_level_[lvl][0].Greedy_algorithm(
+  //    unique_boundary_per_level_.at(lvl).at(0), tol, S);
 
-  // // ---- 直接用所有候选点一次性构建（不使用贪心）----
-  // constexpr double kReg = 1e-12; // 矩阵迭代求解误差
-  // rbf_systems_per_level_[lvl][0].BuildAll(
-  //     unique_boundary_per_level_.at(lvl).at(0), S, kReg);
+  // ---- 直接用所有候选点一次性构建（不使用贪心）----
+  constexpr double kReg = 1e-12; // 矩阵迭代求解误差
+  rbf_systems_per_level_[lvl][0].BuildAll(
+      unique_boundary_per_level_.at(lvl).at(0), S, kReg);
 }
 
 // ===== 第 ≥1 层：每块一个 RBF 系统 =====
@@ -423,7 +404,6 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
     }
 
     // ★ 根据是不是最后一层，调用不同的 set_block_rbf
-    const bool use_greedy = use_greedy_intermediate_ && (lvl < levels_ - 1);
     if (lvl < levels_ - 1) {
         // 非最后一层：用 unique_bndry + block_D
         set_block_rbf(block_rbf_per_level_[lvl], unique_boundary_per_level_[lvl], blks);
@@ -432,31 +412,15 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
         set_block_rbf(block_rbf_per_level_[lvl], blks);
     }
 
-    if (collect_test_info_ && block_info_report_.size() > static_cast<std::size_t>(lvl)) {
-        // Record candidate pool size per block for diagnostics
-        auto &lvl_report = block_info_report_[lvl];
-        for (int i = 0; i < nb && i < static_cast<int>(lvl_report.size()); ++i) {
-            lvl_report[i].candidate_points = rbf_systems_per_level_[lvl][i].external_suppoints.size();
-        }
-    }
+    //// 每块做一次 Greedy_algorithm（使用 external_suppoints）
+    //for (int i = 0; i < nb; ++i) {
+    //    rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
+    //}
 
-    if (use_greedy) {
-        for (int i = 0; i < nb; ++i) {
-            rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
-        }
-    } else {
-        constexpr double kReg = 1e-12; // 矩阵迭代求解误差
-        for (int i = 0; i < nb; ++i) {
-            rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
-        }
-    }
-
-    if (collect_test_info_ && block_info_report_.size() > static_cast<std::size_t>(lvl)) {
-        // Record resulting support count per block for diagnostics
-        auto &lvl_report = block_info_report_[lvl];
-        for (int i = 0; i < nb && i < static_cast<int>(lvl_report.size()); ++i) {
-            lvl_report[i].support_points = rbf_systems_per_level_[lvl][i].suppoints.size();
-        }
+    // ---- 每块直接一次性构建（使用已填充的 external_suppoints）----
+    constexpr double kReg = 1e-12; // 矩阵迭代求解误差
+    for (int i = 0; i < nb; ++i) {
+        rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
     }
 }
 
@@ -470,71 +434,59 @@ void multi_partition::apply_simple_rbf_deformation(std::vector<Node>& coords,
 
 // ===== 第 ≥1 层：DRRBF 变形 =====
 void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
-                                              const State& S, size_t lvl,
-                                              LevelTiming& timing_row)
+                                              const State& S, size_t lvl)
 {
     const auto& blks = blocks_per_level_.at(lvl);   // 当前层的所有分区
     auto& calculators = block_rbf_per_level_.at(lvl);  // 当前层的所有 RBF 计算器
-
-    struct DistanceRecord {
-        int moving_blk_id = -1;
+    struct NodeTask {
+        Node* node = nullptr;
+        int moving_blk_id = 0;
         double d_r2omega1 = 0.0;
         double d_r2omega2 = 0.0;
         bool skip = false;
     };
+    std::vector<NodeTask> tasks;
+    tasks.reserve(coords.size());
 
-    std::vector<DistanceRecord> distance_records(coords.size());
+    const auto t_search_start = high_resolution_clock::now();
+    for (auto& inode : coords) {
+        NodeTask task;
+        task.node = &inode;
 
-    const auto t_dist_start = high_resolution_clock::now();
-    for (size_t idx = 0; idx < coords.size(); ++idx) {
-        const auto& inode = coords[idx];
-        DistanceRecord record;
+        // --- 查找动边界和静边界 ---
+        find_moving_and_static_bndry(inode, blks,
+                                     task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);   //查找最近的动边界和静边界
 
+        // --- 历史 unique_bndry 节点不再变形 ---
         if (global_unique_bndry_set_.find(inode.id) != global_unique_bndry_set_.end()) {
-            record.skip = true;
-            distance_records[idx] = record;
-            continue;
-        }
-
-        find_moving_and_static_bndry(
-            inode,
-            blks,
-            record.moving_blk_id,
-            record.d_r2omega1,
-            record.d_r2omega2);
-
-        distance_records[idx] = record;
-    }
-    const auto t_dist_end = high_resolution_clock::now();
-    const double dist_ms = duration<double, std::milli>(t_dist_end - t_dist_start).count();
-    timing_row.distance_ms = dist_ms;
-    std::cout << "[lvl=" << lvl << "] distance query time: "
-              << dist_ms
-              << " ms\n";
-
-    const auto t_apply_start = high_resolution_clock::now();
-    for (size_t idx = 0; idx < coords.size(); ++idx) {
-        auto& inode = coords[idx];
-        const auto& record = distance_records[idx];
-
-        if (record.skip || record.moving_blk_id < 0) {
             inode.df.setZero();
-            continue;
+            task.skip = true;
         }
 
-        calculators[record.moving_blk_id].calculate_deform_DRRBF(
-            inode,
-            record.d_r2omega1,
-            record.d_r2omega2,
-            blks[record.moving_blk_id].block_D,
-            S);
+        tasks.push_back(task);
     }
-    const auto t_apply_end = high_resolution_clock::now();
-    const double apply_ms = duration<double, std::milli>(t_apply_end - t_apply_start).count();
-    timing_row.apply_ms = apply_ms;
-    std::cout << "[lvl=" << lvl << "] DRRBF apply time: "
-              << apply_ms
-              << " ms\n";
+    const auto t_search_end = high_resolution_clock::now();
+    const double search_ms =
+        duration<double, std::milli>(t_search_end - t_search_start).count();
+    level_timings_[lvl].distance_search_ms = search_ms;
+    std::cout << "[lvl=" << lvl << "] DRRBF distance search time: "
+              << search_ms << " ms\n";
+
+    const auto t_deform_start = high_resolution_clock::now();
+    for (auto& task : tasks) {
+        if (task.skip) {
+            continue;
+        }
+        calculators[task.moving_blk_id].calculate_deform_DRRBF(
+            *(task.node), task.d_r2omega1, task.d_r2omega2,
+            blks[task.moving_blk_id].block_D, S);
+    }
+    const auto t_deform_end = high_resolution_clock::now();
+    const double deform_ms =
+        duration<double, std::milli>(t_deform_end - t_deform_start).count();
+    level_timings_[lvl].drrbf_deform_ms = deform_ms;
+    std::cout << "[lvl=" << lvl << "] DRRBF deform time: "
+              << deform_ms << " ms\n";
 }
 
 
