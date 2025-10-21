@@ -22,6 +22,8 @@ struct State
 
     //算法参数
     double R = 30.0;      //支撑距离 phi = phi(||r-ri||/R)
+    double R_squared = R * R;  // R的平方，用于优化distance在基函数的sqrt计算
+    double invR = 1 / R;    //invR，用于优化除法效率
     double D = 0.0;       //限制距离 psi = 1-r/D, D是最大的位移变形量的五倍
     double alpha = 5.0;  //DRRBF参数, 用于将静止的物面网格排出变形区域
     double beta = 0.5;   //DRRBF参数

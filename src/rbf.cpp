@@ -43,7 +43,7 @@ void RBFInterpolator::calculate_df(const vector<Eigen::VectorXd> &coeff, const v
         {
             for (int k = 0; k < coeff.size(); ++k) // coeff是个size为3的vector
             {
-                df_ij[k] += coeff[k][j] * rbf_func_Wendland(_distance(wall_nodes[i].point, suppoints[j].point), S.R); // 第i个空间节点在第j个支撑点上第k个空间维度上的变形值
+                df_ij[k] += coeff[k][j] * rbf_func_Wendland(_distance(wall_nodes[i].point, suppoints[j].point), S.R, S.invR);// 第i个空间节点在第j个支撑点上第k个空间维度上的变形值
             }
         }
         P_df[i].df = df_ij;                         // 计算得到的变形量
@@ -83,7 +83,7 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
                 A[k].resize(1, 1);
                 b[k].resize(1);
                 eta_ij = _distance(suppoints[i].point, suppoints[i].point);
-                A[k](i, i) = rbf_func_Wendland(eta_ij, S.R); // 对角线元素
+                A[k](i, i) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
                 b[k](i) = suppoints[i].df[k];
                 coeff[k] = A[k].llt().solve(b[k]); // Cholesky分解插值系数
             }
@@ -104,11 +104,11 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
                 for (int j = 0; j < n - 1; ++j)
                 {
                     eta_ij = _distance(suppoints[n - 1].point, suppoints[j].point);
-                    A[k](n - 1, j) = rbf_func_Wendland(eta_ij, S.R); // 插入矩阵新的一行
-                    A[k](j, n - 1) = rbf_func_Wendland(eta_ij, S.R); // 插入矩阵新的一列，矩阵是对称正定的
+                    A[k](n - 1, j) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一行
+                    A[k](j, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一列，矩阵是对称正定的
 
                     eta_ij = _distance(suppoints[n - 1].point, suppoints[n - 1].point);
-                    A[k](n - 1, n - 1) = rbf_func_Wendland(eta_ij, S.R); // 对角线元素
+                    A[k](n - 1, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
                     b[k](n - 1) = suppoints[n - 1].df[k];                // b向量最后一个元素
                     coeff[k] = A[k].llt().solve(b[k]);                   // Cholesky分解插值系数
                 }
@@ -163,7 +163,7 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
                 A[k].resize(1, 1);
                 b[k].resize(1);
                 eta_ij = _distance(suppoints[i].point, suppoints[i].point);
-                A[k](i, i) = rbf_func_Wendland(eta_ij, S.R); // 对角线元素
+                A[k](i, i) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
                 b[k](i) = suppoints[i].df[k];
                 coeff[k] = A[k].llt().solve(b[k]); // Cholesky分解插值系数
             }
@@ -184,11 +184,11 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
                 for (int j = 0; j < n - 1; ++j)
                 {
                     eta_ij = _distance(suppoints[n - 1].point, suppoints[j].point);
-                    A[k](n - 1, j) = rbf_func_Wendland(eta_ij, S.R); // 插入矩阵新的一行
-                    A[k](j, n - 1) = rbf_func_Wendland(eta_ij, S.R); // 插入矩阵新的一列，矩阵是对称正定的
+                    A[k](n - 1, j) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一行
+                    A[k](j, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一列，矩阵是对称正定的
 
                     eta_ij = _distance(suppoints[n - 1].point, suppoints[n - 1].point);
-                    A[k](n - 1, n - 1) = rbf_func_Wendland(eta_ij, S.R); // 对角线元素
+                    A[k](n - 1, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
                     b[k](n - 1) = suppoints[n - 1].df[k];                // b向量最后一个元素
                     coeff[k] = A[k].llt().solve(b[k]);                   // Cholesky分解插值系数
                 }
@@ -262,7 +262,7 @@ void RBFInterpolator::BuildAll(const std::vector<Node>& candidates, const State&
         // 上三角填充：计算核函数 φ(||xi - xj||)
         for (int j = i; j < n; ++j) {
             const double eta = _distance(suppoints[i].point, suppoints[j].point); // 距离 ||xi - xj||
-            const double phi = rbf_func_Wendland(eta, S.R);                       // Wendland 核 φ(eta; R)
+            const double phi = rbf_func_Wendland(eta, S.R, S.invR);                       // Wendland 核 φ(eta; R)
 
             // 三个分量共用同一核矩阵（坐标方向只影响右端项，不影响核）
             A[0](i, j) = phi;
@@ -348,11 +348,13 @@ void DeformCalculator::calculate_deform_RBF(Node &inode, const State &S) const
 //          S包括数据: R
 {
     Eigen::Vector3d df_ij{0, 0, 0};
+    double phi_ij = 0.0;
     for (int j = 0; j < rbf.suppoints.size(); ++j)
     {
+        phi_ij = rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R, S.invR);
         for (int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
         {
-            df_ij[k] += rbf.coeff[k][j] * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R); // 第i个空间节点在第j个支撑点上第k个空间维度上的变形值
+            df_ij[k] += rbf.coeff[k][j] * phi_ij; // 第i个空间节点在第j个支撑点上第k个空间维度上的变形值
         }
     }
     inode.df = df_ij; // 计算得到的变形量
@@ -374,7 +376,7 @@ void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, do
         {
             if (d_r2omega1 > D)
                 continue; // 超过限制半径就直接为0
-            df_ij[k] += rbf.coeff[k][j] * psi(d_r2omega1, d_r2omega2, D, S) * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R);
+            df_ij[k] += rbf.coeff[k][j] * psi(d_r2omega1, d_r2omega2, D, S) * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R, S.invR);
         }
     }
     inode.df = df_ij; // 计算得到的变形量

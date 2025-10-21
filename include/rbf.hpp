@@ -8,18 +8,22 @@
 
 
 // rbf基函数定义：Wendland's C2 function
-inline double rbf_func_Wendland(double eta, double R)
+inline double rbf_func_Wendland(double dist, double R, double invR)
+//传入的dist为||ri-rj||
+// R是支撑半径
+//invR为 1/R，由于R是支撑半径，提前已知，该值用于优化效率
+//Wendland's C2 function的定义为： phi(eta)=(1-eta)^4(4eta+1) , 0<=eta<1 
+//                                          0 , eta>=1
+//令t=1-eta, phi = t^4(5-4t)
 {
-    eta = eta / R;    //传入的eta = ri-rj, 为了更好的插值精度计算：eta = (ri-rj)/R
-    if (eta >= 0 && eta <= 1)
-    {
-        return pow((1 - eta), 4) * (4 * eta + 1);
-    }
-    else
-    {
-        return 0;
-    }
+    if (dist >= R) return 0.0;
+    const double eta = dist * invR;
+    const double t = 1.0 - eta;
+    const double t2 = t * t;
+    return(5.0 - 4.0 * t) * (t2 * t2);
 }
+
+
 
 // DDRBF的psi函数定义
 

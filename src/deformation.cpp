@@ -12,6 +12,8 @@ double _distance(const Point<double>& P1, const Point<double>& P2) {
                    + (P1.z - P2.z) * (P1.z - P2.z));
 }
 
+
+
 // 物面节点提取函数
 //确定物面节点的数组，该函数确保节点不重复
 // 确定物面边界在边界数组里的索引wall_id
