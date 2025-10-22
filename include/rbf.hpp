@@ -27,22 +27,39 @@ inline double rbf_func_Wendland(double dist, double R, double invR)
 
 
 
+//// DDRBF的psi函数定义
+//// 效率优化版本
+//inline double psi(double d_r2omega1, double d_r2omega2, double D, const State& S)
+//{
+//    double psi1 = 0.0, psi2 = 0.0;
+//
+//    // 用 D 作为半径阈值
+//    if (d_r2omega1 >= 0 && d_r2omega1 <= D)
+//        psi1 = 1.0 - d_r2omega1 / D;
+//    else if (d_r2omega1 > D)  // 超过限制半径就直接为0
+//        psi1 = 0.0;
+//
+//    const double psi2_temp = (S.alpha * d_r2omega2 - d_r2omega1) / S.beta;
+//    psi2 = std::min(1.0, std::max(0.0, psi2_temp));
+//
+//    return std::min(psi1, psi2);
+//}
+
 // DDRBF的psi函数定义
-
-// rbf.hpp
-inline double psi(double d_r2omega1, double d_r2omega2, double D, const State& S)
+// 效率优化版本，尽量避免除法和多余乘法的运算
+inline double psi(double d1, double d2, double D, const State& S)
 {
-    double psi1 = 0.0, psi2 = 0.0;
+    if (d1 >= D) return 0.0;   //超过限制半径直接为0
+    const double invD = 1.0 / D;
+    
+    // ~psi =1-d1/D
+    const double psi1 = 1 - d1 * invD;
 
-    // 用 D 作为半径阈值
-    if (d_r2omega1 >= 0 && d_r2omega1 <= D)
-        psi1 = 1.0 - d_r2omega1 / D;
-    else if (d_r2omega1 > D)  // 超过限制半径就直接为0
-        psi1 = 0.0;
+    // ~psi2 = min(1,max(0,(alpha*d2-d1)/beta))
+    const double tmp = (S.alpha * d2 - d1) * S.invBeta;
+    const double psi2 = std::min(1.0, std::max(0.0, tmp));
 
-    const double psi2_temp = (S.alpha * d_r2omega2 - d_r2omega1) / S.beta;
-    psi2 = std::min(1.0, std::max(0.0, psi2_temp));
-
+    // 返回较小者
     return std::min(psi1, psi2);
 }
 

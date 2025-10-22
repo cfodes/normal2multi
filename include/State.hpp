@@ -27,6 +27,7 @@ struct State
     double D = 0.0;       //限制距离 psi = 1-r/D, D是最大的位移变形量的五倍
     double alpha = 5.0;  //DRRBF参数, 用于将静止的物面网格排出变形区域
     double beta = 0.5;   //DRRBF参数
+    double invBeta = 1 / beta;  // 用于优化除法效率
 
     //查询结构
     GridBTree<int, Point<double>> wall_tree;   //根据物面节点构造的二叉树
