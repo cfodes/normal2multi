@@ -25,6 +25,8 @@ inline double rbf_func_Wendland(double dist, double R, double invR)
 
 
 
+
+
 // DDRBF的psi函数定义
 
 // rbf.hpp
@@ -58,6 +60,10 @@ public:
     std::vector<Eigen::VectorXd> b;      //已知位移向量，xyz三个方向有三个
     std::vector<Eigen::VectorXd> coeff;   //插值系数，xyz三个方向有三个
 
+    Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor> supp_pos;   //连续缓冲（行主序）用以优化效率 Ns*3:(x y z)
+    Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor> coeff_mat;   //Ns*3:(c0 c1 c2)
+
+
     // 构造函数，确保A, b, coeff的size为3
     RBFInterpolator(); 
 
@@ -81,6 +87,9 @@ public:
 
     //贪心算法误差输出至文件查看
     void write_greedy_tol(const std::string& filename);
+
+    //从现有的suppoints/coeff 构建紧凑缓冲，用以优化效率
+    void rebuild_compact_buffers_from_current();
 };
 
 // 利用插值系数计算变形的工具类

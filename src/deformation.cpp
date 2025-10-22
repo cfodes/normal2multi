@@ -5,12 +5,6 @@
 #define PI acos(-1)
 using namespace std;
 
-// 两点距离
-double _distance(const Point<double>& P1, const Point<double>& P2) {
-    return std::sqrt((P1.x - P2.x) * (P1.x - P2.x)
-                   + (P1.y - P2.y) * (P1.y - P2.y)
-                   + (P1.z - P2.z) * (P1.z - P2.z));
-}
 
 
 
