@@ -423,21 +423,10 @@ void DeformCalculator::calculate_deform_RBF(Node &inode, const State &S) const
 
     inode.df = Eigen::Vector3d{ df0,df1,df2 };  //构建df值
 
-
-    //Eigen::Vector3d df_ij{0, 0, 0};
-    //double phi_ij = 0.0;
-    //for (int j = 0; j < rbf.suppoints.size(); ++j)
-    //{
-    //    phi_ij = rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R, S.invR);
-    //    for (int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
-    //    {
-    //        df_ij[k] += rbf.coeff[k][j] * phi_ij; // 第i个空间节点在第j个支撑点上第k个空间维度上的变形值
-    //    }
-    //}
-    //inode.df = df_ij; // 计算得到的变形量
 }
 
-void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, double d_r2omega2, double D, const State &S) const
+
+void DeformCalculator::calculate_deform_DRRBF(Node& inode, double d_r2omega1, double d_r2omega2, double D, const State& S) const
 // 计算单个节点的变形（RRBF）
 // 传入参数：单个节点 inode
 //          待插值点到动边界的距离 d_r2omega1
@@ -446,17 +435,39 @@ void DeformCalculator::calculate_deform_DRRBF(Node &inode, double d_r2omega1, do
 //          参数结构体 S
 //          S包括数据: alpha, beta,  R
 {
-    Eigen::Vector3d df_ij{0, 0, 0};
-    for (int j = 0; j < rbf.suppoints.size(); ++j)
+    // 使用标量累加更利于优化
+    double df0 = 0.0, df1 = 0.0, df2 = 0.0;
+
+    //紧凑缓冲数据（Ns *3）
+    const auto& pos = rbf.supp_pos;
+    const auto& coe = rbf.coeff_mat;
+    const int Ns = static_cast<int>(pos.rows());
+    Eigen::Vector3d df_ij{ 0, 0, 0 };
+
+    // 空间点坐标
+    const double xi = inode.point.x;
+    const double yi = inode.point.y;
+    const double zi = inode.point.z;
+
+    for (int j = 0; j < Ns; ++j)
     {
-        for (int k = 0; k < rbf.coeff.size(); ++k) // coeff是个size为3的vector
-        {
-            if (d_r2omega1 > D)
-                continue; // 超过限制半径就直接为0
-            df_ij[k] += rbf.coeff[k][j] * psi(d_r2omega1, d_r2omega2, D, S) * rbf_func_Wendland(_distance(inode.point, rbf.suppoints[j].point), S.R, S.invR);
-        }
+        //支撑点坐标
+        const double xj = pos(j, 0);
+        const double yj = pos(j, 1);
+        const double zj = pos(j, 2);
+
+        const double dist = _distance(xi, yi, zi, xj, yj, zj);   //计算两点欧氏距离，优化版本
+        const double phi = rbf_func_Wendland(dist, S.R, S.invR); // 计算基函数值
+        const double tmp_psi = psi(d_r2omega1, d_r2omega2, D, S);
+
+        //在同一条cache line上获取c0/c1/c2
+        const double phi_psi = phi * tmp_psi;  //提前相乘减少乘法
+
+        df0 += coe(j, 0) * phi_psi;
+        df1 += coe(j, 1) * phi_psi;
+        df2 += coe(j, 2) * phi_psi;
     }
-    inode.df = df_ij; // 计算得到的变形量
+    inode.df = Eigen::Vector3d{ df0,df1,df2 };  //构建df值
 }
 
 // ------------------------------------------------------------

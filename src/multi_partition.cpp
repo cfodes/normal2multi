@@ -132,158 +132,107 @@ void multi_partition::divide_wall(const std::vector<element> &elems,
 void multi_partition::multi_partition_rbf_algorithm(
     const std::vector<double> &tol_steps, const State &S,
     std::vector<Node> &wall_nodes, std::vector<Node> &all_nodes_coords) {
-    //调试：
-        {   int lvl = 0;
-            double tol = tol_steps[0];
-            // 步骤 1: 构建 RBF 插值系统（第0层只有1个系统，从第1层开始每个块一个）
-            const auto t_build_start = high_resolution_clock::now(); //插值系统计时开始
-            if (lvl == 0) {
-                build_single_rbf_system(tol, S, lvl);
-            }
-            else { // 构建分区RBF系统
-                build_multiple_rbf_systems(tol, S, lvl);
-            }
-            //插值系统计时结束
-            const auto t_build_end = high_resolution_clock::now();
-            const double build_ms =
-                duration<double, std::milli>(t_build_end - t_build_start).count();
-            std::cout << "[lvl=" << lvl << "] build RBF system time: "
-                << build_ms << " ms\n";
-            
+  // 检查误差设置的级数与分区的级数是否一致
+  assert(tol_steps.size() == levels_ && "tol_steps size must match levels");
 
+  level_timings_.assign(levels_, LevelTiming{});
+  level_statistics_.assign(levels_, LevelStatistics{});
 
-            // 步骤 2: 执行节点变形量计算
-            const auto t_df_start = high_resolution_clock::now();  //变形量计算计时开始
-            if (lvl == 0) {
-                apply_simple_rbf_deformation(all_nodes_coords, S, lvl);
-            }
-            else // 第 ≥1 层：DRRBF（考虑动/静边界距离）
-            {
-                apply_drrbf_deformation(all_nodes_coords, S, lvl);
-            }
-            //变形量计算计时结束
-            const auto t_df_end = high_resolution_clock::now();
-            const double compute_ms =
-                duration<double, std::milli>(t_df_end - t_df_start).count();
-            std::cout << "[lvl=" << lvl << "] compute df time: "
-                << compute_ms << " ms\n";
-            
+  set_wall_id2nodes(wall_id2nodes_, wall_nodes); // 构建物面的索引和id的查找集
+  std::vector<Node> wall_accurate = set_accurate_wall(
+      wall_nodes); // 根据物面节点初始位置和待变形量计算准确的变形结果
+  std::vector<Node> wall_prev =
+      wall_nodes; // 当前物面结果，第 0 层保持原始 wall
 
+  for (size_t lvl = 0; lvl < levels_; ++lvl) {
+    const double tol = tol_steps[lvl];
 
-            // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
-            const auto t_update_start = high_resolution_clock::now();  //计算节点坐标计时开始
-            calculate_deformed_coordinates(all_nodes_coords);
-            //计算节点坐标计时结束
-            const auto t_update_end = high_resolution_clock::now();
-            const double update_ms =
-                duration<double, std::milli>(t_update_end - t_update_start).count();
-            std::cout << "[lvl=" << lvl << "] update coordinates time: "
-                << update_ms << " ms\n";
-            
+    //每一步迭代的预处理
+    const auto t_pre_start = high_resolution_clock::now();  //预处理计时开始
+    if (lvl != 0) {
+      // 根据更新后的all_node_coord和准确的物面变形结果更新wall_prev的节点坐标和待变形量
+      update_wall_prev(wall_prev, wall_accurate, all_nodes_coords);
+      // 根据更新后的wall_prev重新设置分区内部的节点坐标,
+      // 变形量由后续的set_internal_nodes_df处理
+      Reset_blocks(blocks_per_level_[lvl], wall_prev, wall_id2nodes_);
+      // 更新已经用过的unique_bndry的位置，这些点已经准确变形，无需再变
+      update_unique_bndry_nodes(wall_prev, static_cast<int>(lvl));
+      // 根据更新后的wall_prev重新设置分区内部的节点待变形量，并且计算了分区的block_D!!!
+      set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
+      // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
+      set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
+
+      //预处理计时结束
+      const auto t_pre_end = high_resolution_clock::now();
+      const double ms = duration<double, std::milli>(t_pre_end - t_pre_start).count();
+      std::cout << "[lvl=" << lvl << "] preprocess time: " << ms << " ms\n";
+      level_timings_[lvl].preprocess_ms = ms;
+    }
+
+    // 步骤 1: 构建 RBF 插值系统（第0层只有1个系统，从第1层开始每个块一个）
+    const auto t_build_start = high_resolution_clock::now(); //插值系统计时开始
+    if (lvl == 0) {
+      build_single_rbf_system(tol, S, lvl);
+    } else { // 构建分区RBF系统
+      build_multiple_rbf_systems(tol, S, lvl);
+    }
+    //插值系统计时结束
+    const auto t_build_end = high_resolution_clock::now();
+    const double build_ms =
+        duration<double, std::milli>(t_build_end - t_build_start).count();
+    std::cout << "[lvl=" << lvl << "] build RBF system time: "
+              << build_ms << " ms\n";
+    level_timings_[lvl].build_rbf_ms = build_ms;
+
+    // 更新统计信息
+    auto &lvl_stat = level_statistics_.at(lvl);
+    lvl_stat.partitions = blocks_per_level_.at(lvl).size();
+    size_t candidate_points = 0;
+    size_t support_points = 0;
+    if (lvl == 0) {
+      if (lvl < unique_boundary_per_level_.size()) {
+        for (const auto &per_parent : unique_boundary_per_level_.at(lvl)) {
+          candidate_points += per_parent.size();
         }
+      }
+    } else {
+      for (const auto &rbf : rbf_systems_per_level_[lvl]) {
+        candidate_points += rbf.external_suppoints.size();
+      }
+    }
+    for (const auto &rbf : rbf_systems_per_level_[lvl]) {
+      support_points += rbf.suppoints.size();
+    }
+    lvl_stat.candidate_points = candidate_points;
+    lvl_stat.support_points = support_points;
 
+    // 步骤 2: 执行节点变形量计算
+    const auto t_df_start = high_resolution_clock::now();  //变形量计算计时开始
+    if (lvl == 0) {
+      apply_simple_rbf_deformation(all_nodes_coords, S, lvl);
+    } else // 第 ≥1 层：DRRBF（考虑动/静边界距离）
+    {
+      apply_drrbf_deformation(all_nodes_coords, S, lvl);
+    }
+    //变形量计算计时结束
+    const auto t_df_end = high_resolution_clock::now();
+    const double compute_ms =
+        duration<double, std::milli>(t_df_end - t_df_start).count();
+    std::cout << "[lvl=" << lvl << "] compute df time: "
+              << compute_ms << " ms\n";
+    level_timings_[lvl].compute_df_ms = compute_ms;
 
-  //// 检查误差设置的级数与分区的级数是否一致
-  //assert(tol_steps.size() == levels_ && "tol_steps size must match levels");
-
-  //level_timings_.assign(levels_, LevelTiming{});
-  //level_statistics_.assign(levels_, LevelStatistics{});
-
-  //set_wall_id2nodes(wall_id2nodes_, wall_nodes); // 构建物面的索引和id的查找集
-  //std::vector<Node> wall_accurate = set_accurate_wall(
-  //    wall_nodes); // 根据物面节点初始位置和待变形量计算准确的变形结果
-  //std::vector<Node> wall_prev =
-  //    wall_nodes; // 当前物面结果，第 0 层保持原始 wall
-
-  //for (size_t lvl = 0; lvl < levels_; ++lvl) {
-  //  const double tol = tol_steps[lvl];
-
-  //  //每一步迭代的预处理
-  //  const auto t_pre_start = high_resolution_clock::now();  //预处理计时开始
-  //  if (lvl != 0) {
-  //    // 根据更新后的all_node_coord和准确的物面变形结果更新wall_prev的节点坐标和待变形量
-  //    update_wall_prev(wall_prev, wall_accurate, all_nodes_coords);
-  //    // 根据更新后的wall_prev重新设置分区内部的节点坐标,
-  //    // 变形量由后续的set_internal_nodes_df处理
-  //    Reset_blocks(blocks_per_level_[lvl], wall_prev, wall_id2nodes_);
-  //    // 更新已经用过的unique_bndry的位置，这些点已经准确变形，无需再变
-  //    update_unique_bndry_nodes(wall_prev, static_cast<int>(lvl));
-  //    // 根据更新后的wall_prev重新设置分区内部的节点待变形量，并且计算了分区的block_D!!!
-  //    set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
-  //    // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
-  //    set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
-
-  //    //预处理计时结束
-  //    const auto t_pre_end = high_resolution_clock::now();
-  //    const double ms = duration<double, std::milli>(t_pre_end - t_pre_start).count();
-  //    std::cout << "[lvl=" << lvl << "] preprocess time: " << ms << " ms\n";
-  //    level_timings_[lvl].preprocess_ms = ms;
-  //  }
-
-  //  // 步骤 1: 构建 RBF 插值系统（第0层只有1个系统，从第1层开始每个块一个）
-  //  const auto t_build_start = high_resolution_clock::now(); //插值系统计时开始
-  //  if (lvl == 0) {
-  //    build_single_rbf_system(tol, S, lvl);
-  //  } else { // 构建分区RBF系统
-  //    build_multiple_rbf_systems(tol, S, lvl);
-  //  }
-  //  //插值系统计时结束
-  //  const auto t_build_end = high_resolution_clock::now();
-  //  const double build_ms =
-  //      duration<double, std::milli>(t_build_end - t_build_start).count();
-  //  std::cout << "[lvl=" << lvl << "] build RBF system time: "
-  //            << build_ms << " ms\n";
-  //  level_timings_[lvl].build_rbf_ms = build_ms;
-
-  //  // 更新统计信息
-  //  auto &lvl_stat = level_statistics_.at(lvl);
-  //  lvl_stat.partitions = blocks_per_level_.at(lvl).size();
-  //  size_t candidate_points = 0;
-  //  size_t support_points = 0;
-  //  if (lvl == 0) {
-  //    if (lvl < unique_boundary_per_level_.size()) {
-  //      for (const auto &per_parent : unique_boundary_per_level_.at(lvl)) {
-  //        candidate_points += per_parent.size();
-  //      }
-  //    }
-  //  } else {
-  //    for (const auto &rbf : rbf_systems_per_level_[lvl]) {
-  //      candidate_points += rbf.external_suppoints.size();
-  //    }
-  //  }
-  //  for (const auto &rbf : rbf_systems_per_level_[lvl]) {
-  //    support_points += rbf.suppoints.size();
-  //  }
-  //  lvl_stat.candidate_points = candidate_points;
-  //  lvl_stat.support_points = support_points;
-
-  //  // 步骤 2: 执行节点变形量计算
-  //  const auto t_df_start = high_resolution_clock::now();  //变形量计算计时开始
-  //  if (lvl == 0) {
-  //    apply_simple_rbf_deformation(all_nodes_coords, S, lvl);
-  //  } else // 第 ≥1 层：DRRBF（考虑动/静边界距离）
-  //  {
-  //    apply_drrbf_deformation(all_nodes_coords, S, lvl);
-  //  }
-  //  //变形量计算计时结束
-  //  const auto t_df_end = high_resolution_clock::now();
-  //  const double compute_ms =
-  //      duration<double, std::milli>(t_df_end - t_df_start).count();
-  //  std::cout << "[lvl=" << lvl << "] compute df time: "
-  //            << compute_ms << " ms\n";
-  //  level_timings_[lvl].compute_df_ms = compute_ms;
-
-  //  // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
-  //  const auto t_update_start = high_resolution_clock::now();  //计算节点坐标计时开始
-  //  calculate_deformed_coordinates(all_nodes_coords);
-  //  //计算节点坐标计时结束
-  //  const auto t_update_end = high_resolution_clock::now();
-  //  const double update_ms =
-  //      duration<double, std::milli>(t_update_end - t_update_start).count();
-  //  std::cout << "[lvl=" << lvl << "] update coordinates time: "
-  //            << update_ms << " ms\n";
-  //  level_timings_[lvl].update_coords_ms = update_ms;
-  //}
+    // 3) 计算变形后的节点坐标 s_{k+1} = s_k + df
+    const auto t_update_start = high_resolution_clock::now();  //计算节点坐标计时开始
+    calculate_deformed_coordinates(all_nodes_coords);
+    //计算节点坐标计时结束
+    const auto t_update_end = high_resolution_clock::now();
+    const double update_ms =
+        duration<double, std::milli>(t_update_end - t_update_start).count();
+    std::cout << "[lvl=" << lvl << "] update coordinates time: "
+              << update_ms << " ms\n";
+    level_timings_[lvl].update_coords_ms = update_ms;
+  }
 }
 
 // ===== 查询 =====
