@@ -21,15 +21,8 @@ struct GlobalCaseConfig {
 int main()
 {
     std::vector<PartitionCaseConfig> partition_cases = {
-        
-        
+       
         {
-            "../data/onera_m6_2M4.su2",
-            "../output/onera_m6_2M4_80_16.su2",
-            {80, 16, 2},
-            {1e-6, 1e-6, 1e-5}
-        }
-        /*{
             "../data/onera_m6_2M4.su2",
             "../output/onera_m6_2M4_80_16.su2",
             {80, 16, 2},
@@ -46,7 +39,8 @@ int main()
             "../output/onera_m6_2M4_40_16.su2",
             {40, 16, 2},
             {1e-6, 1e-6, 1e-5}
-        },
+        }
+        /*
         {
             "../data/onera_m6_2M4.su2",
             "../output/onera_m6_2M4_20_32.su2",
