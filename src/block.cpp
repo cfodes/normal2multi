@@ -79,7 +79,7 @@ void mesh_block::set_blk_nodes_df(const std::vector<Node>& wall_prev, const std:
 
 }
 
-void mesh_block::set_block_tree()  //内部节点建立后，构建内部节点的二叉树
+void mesh_block::set_block_tree()  //内部节点建立后，构建内部节点的二叉树，同时缓存AABB
 {
         block_tree.setGridSize(internal_nodes.size());
         for (int i = 0; i < internal_nodes.size(); ++i)
@@ -87,6 +87,19 @@ void mesh_block::set_block_tree()  //内部节点建立后，构建内部节点�
             block_tree.setGrid(i, internal_nodes[i].id, internal_nodes[i].point);  //构建二叉树，参数分别为索引、点的id和点
         }
         block_tree.construct();
+
+        // 从block_tree的根节点读出AABB并缓存（无需额外扫描每个点）
+        Point<double> bmin, bmax;
+        if (block_tree.root_bound(bmin, bmax))
+        {
+            aabb_min = bmin;
+            aabb_max = bmax;
+            has_aabb = true;
+        }
+        else
+        {
+            has_aabb = false;    //空树不参与外部树构建
+        }
 }
 
 void Reset_blocks(std::vector<mesh_block>& blocks, const std::vector<Node>& wall_nodes, const std::unordered_map<int, int>& id2node)
