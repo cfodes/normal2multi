@@ -68,15 +68,23 @@ void TestDriver::run_multi_partition()
 
     level_timings_ = mp.get_level_timings();
     level_statistics_ = mp.get_level_statistics();
+
+    //将数据传给block_summaries
     block_summaries_.assign(level_timings_.size(), {});
     for (size_t lvl = 0; lvl < block_summaries_.size(); ++lvl) {
-        const auto& blocks = mp.get_level_blocks(lvl);
+        const auto stats = mp.get_block_stats(lvl,S_.wall_nodes);
         auto& summaries = block_summaries_[lvl];
-        summaries.reserve(blocks.size());
-        for (const auto& blk : blocks) {
-            summaries.push_back(BlockSummary{blk.block_id, blk.block_D});
+        summaries.reserve(stats.size());
+        for (const auto& st : stats) {
+            BlockSummary bs;
+            bs.block_id = st.block_id;
+            bs.candidate_points = st.candidate_points;
+            bs.support_points = st.support_points;
+            bs.block_D = st.block_D;
+            summaries.push_back(std::move(bs));
         }
     }
+
 }
 
 void TestDriver::write_mesh() 
@@ -134,25 +142,28 @@ void TestDriver::write_info_report(const std::filesystem::path& info_path) const
     }
 
     ofs << std::fixed << std::setprecision(6);
+
     for (size_t lvl = 0; lvl < level_statistics_.size(); ++lvl) {
         ofs << "level " << lvl << '\n';
-        if (lvl < level_statistics_.size()) {
-            const auto& stat = level_statistics_[lvl];
-            ofs << "partitions " << stat.partitions << '\n';
-            ofs << "candidate_points " << stat.candidate_points << '\n';
-            ofs << "support_points " << stat.support_points << '\n';
-        }
+        // 分块明细（四列）
         ofs << "blocks\n";
+        ofs << "# block_id candidate_p support_p block_D\n";
         if (lvl < block_summaries_.size()) {
             const auto& summaries = block_summaries_[lvl];
             for (const auto& blk : summaries) {
                 double block_D_value = blk.block_D;
                 if (lvl == 0) {
-                    block_D_value = initial_D_;
+                    block_D_value = initial_D_; // 与原有语义一致
                 }
-                ofs << "  " << blk.block_id << ' ' << block_D_value << '\n';
+                ofs << "  "
+                    << blk.block_id << ' '
+                    << blk.candidate_points << ' '
+                    << blk.support_points << ' '
+                    << block_D_value << '\n';
             }
         }
+
         ofs << '\n';
     }
 }
+

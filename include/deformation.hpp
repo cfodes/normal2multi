@@ -4,8 +4,26 @@
 #include <Eigen/Core>
 #include "geometry.hpp"
 
-// 两点距离
-double _distance(const Point<double>& P1, const Point<double>& P2);
+// 两点距离(传点类版本)
+
+inline double _distance(const Point<double>& P1, const Point<double>& P2)
+{
+    return std::sqrt((P1.x - P2.x) * (P1.x - P2.x)
+                     + (P1.y - P2.y) * (P1.y - P2.y)
+                     + (P1.z - P2.z) * (P1.z - P2.z));
+}
+
+// 两点距离(传点坐标版本，优化效率用)
+inline double _distance(double xi, double yi, double zi,
+    double xj, double yj, double zj) noexcept
+{
+    const double dx = xi - xj;
+    const double dy = yi - yj;
+    const double dz = zi - zj;
+
+    // 返回两点欧式距离
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
 
 // 物面节点提取函数
 std::vector<Node> Set_wall_nodes(const std::vector<boundary>& every_boundary, 

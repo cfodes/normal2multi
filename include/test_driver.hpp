@@ -42,8 +42,10 @@ private:
 
     // === 统计信息 ===
     struct BlockSummary {
-        int block_id = 0;
-        double block_D = 0.0;
+        int block_id = -1;   //分区编号
+        size_t candidate_points = 0;   // 该block的候选点数量
+        size_t support_points = 0;     // 该block的支撑点数量
+        double block_D = 0.0;  //分区的D
     };
 
     std::vector<multi_partition::LevelTiming> level_timings_;

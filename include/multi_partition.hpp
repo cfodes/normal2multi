@@ -64,6 +64,15 @@ public:
     const std::vector<LevelTiming>& get_level_timings() const { return level_timings_; }
     const std::vector<LevelStatistics>& get_level_statistics() const { return level_statistics_; }
 
+    //用于获取分区算法信息
+    struct BlockStat
+    {
+        int block_id = -1;
+        size_t candidate_points = 0;
+        size_t support_points = 0;
+        double block_D = 0.0;
+    };
+    std::vector<BlockStat> get_block_stats(size_t lvl, const std::vector<Node>& wall) const;
 private:
     // ===== 成员数据 =====
     size_t levels_;                               // 层数
@@ -95,6 +104,8 @@ private:
     // 计时和统计数据
     std::vector<LevelTiming> level_timings_;
     std::vector<LevelStatistics> level_statistics_;
+
+
 
 private:
     // ===== 内部工具 =====
@@ -156,3 +167,4 @@ private:
 
 
 };
+
