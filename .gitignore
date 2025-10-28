@@ -1,0 +1,51 @@
+# =============================
+# Project1 Git Ignore Config
+# Keep only include/ and src/
+# =============================
+
+# Ignore everything by default
+*
+!.gitignore
+!.gitattributes
+
+# Keep folders include and src (and all contents inside)
+!include/
+!src/
+!include/**
+!src/**
+
+# =============================
+# Exclude Visual Studio & build outputs just in case
+# =============================
+
+# (These will only take effect if you later un-ignore project files)
+x64/
+Debug/
+Release/
+build/
+out/
+*.obj
+*.pdb
+*.idb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.log
+
+# Ignore Visual Studio project metadata
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+CMakeLists.txt
+CMakeCache.txt
+
+# System and temp files
+*.tmp
+*.bak
+*.user
+*.swp
+*.DS_Store
+Thumbs.db
