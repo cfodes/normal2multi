@@ -11,6 +11,8 @@
 #include "rbf.hpp"            // RBFInterpolator / DeformCalculator / free set_block_rbf(...)
 #include "metis_block.hpp"
 #include "State.hpp"
+#include "partition_bvh.hpp"
+#include "partition_inn.hpp"    // INN searching Algorithm
 
 // 多级 METIS 分区 + 分组 RBF 主控类
 class multi_partition {
@@ -105,7 +107,8 @@ private:
     std::vector<LevelTiming> level_timings_;
     std::vector<LevelStatistics> level_statistics_;
 
-
+    // BVH外层树叶子数组，用于初始化BVH
+    std::vector<PartitionBVH> bvh_per_level_;
 
 private:
     // ===== 内部工具 =====
@@ -165,6 +168,15 @@ private:
                                   double& i_d_r2omega1,
                                   double& i_d_r2omega2) const;
 
+    // 查询某个点到“动边界”和“静边界”的距离，使用BVH构建外层树加速搜索
+    void find_moving_and_static_bndry_with_bvh(const Node& ind,
+                                               const std::vector<mesh_block>& blocks,
+                                               int& i_id,
+                                               double& i_d_r2omega1,
+                                               double& i_d_r2omega2,
+                                               std::size_t lvl) const;
 
+    // 构建某一层分区的BVH外层树，返回构建的leaf数量
+    std::size_t build_bvh_for_level(std::size_t lvl);
 };
 

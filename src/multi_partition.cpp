@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iostream>
 #include <chrono>
+#include <utility>     //std::move
 using namespace std::chrono;
 
 // ===== 构造 =====
@@ -161,6 +162,8 @@ void multi_partition::multi_partition_rbf_algorithm(
       set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
       // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
       set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
+      // 构建分区的BVH外层树，用于INN算法展开最近邻的几个分区以查找最邻近的点
+      const auto leaf_count = build_bvh_for_level(lvl);
 
       //预处理计时结束
       const auto t_pre_end = high_resolution_clock::now();
@@ -453,9 +456,15 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
         NodeTask task;
         task.node = &inode;
 
-        // --- 查找动边界和静边界 ---
-        find_moving_and_static_bndry(inode, blks,
-                                     task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);   //查找最近的动边界和静边界
+        //// --- 查找动边界和静边界 ---
+        //find_moving_and_static_bndry(inode, blks,
+        //                             task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);   //查找最近的动边界和静边界
+
+        // --- 查找动边界和静边界（使用INN搜索方法） ---
+        find_moving_and_static_bndry_with_bvh(inode, blks,
+                                              task.moving_blk_id, task.d_r2omega1, task.d_r2omega2,
+                                              lvl);    // 查找最近的动边界和静边界（优化方法）
+ 
 
         // --- 历史 unique_bndry 节点不再变形 ---
         if (global_unique_bndry_set_.find(inode.id) != global_unique_bndry_set_.end()) {
@@ -610,6 +619,46 @@ void multi_partition::find_moving_and_static_bndry(
 }
 
 
+void multi_partition::find_moving_and_static_bndry_with_bvh(
+// 查询空间节点ind到“动边界”和“静边界”的距离，使用BVH构建外层树加速搜索
+// ind: 待查询的空间节点
+// blocks: 当前层的所有分区
+// i_id: 输出，距离最近的动边界所在分区的 id
+// i_d_r2omega1: 输出，距离最近的动边界的距离
+// i_d_r2omega2: 输出，距离最近的静边界的距离
+// lvl: 当前层级
+    const Node& ind,
+    const std::vector<mesh_block>& blocks,
+    int& i_id,
+    double& i_d_r2omega1,
+    double& i_d_r2omega2,
+    std::size_t lvl) const
+{
+    // 做异常检查
+    if (lvl >= bvh_per_level_.size() || bvh_per_level_[lvl].empty()) 
+    {
+        throw std::runtime_error(
+            "find_moving_and_static_bndry_with_bvh: BVH not available at level " +
+            std::to_string(lvl) + ". Ensure build_bvh_for_level(lvl) was called."
+        );
+    }
+
+    const auto& bvh = bvh_per_level_[lvl];  // 取当前层级的外层树
+
+    INNResult rs = PartitionINN::query(            // INN搜索
+        bvh,                             // 由分区构建的外层树
+        blocks,                          // 分区数组
+        global_unique_bndry_id_.empty() ? nullptr : &unique_bndry_tree_,   // 判断全局unique_bndry是否为空，不为空则传入unique_bndry_tree_
+        ind.point                        // 空间节点的点坐标
+    );
+
+    // 输出：动边界（来自分区内部点；需要分区号），静边界（数值）
+    i_id = rs.nearest_block_id;
+    i_d_r2omega1 = rs.d1;
+    i_d_r2omega2 = rs.d2;
+}
+
+
 // 获取每级每个分区的block_id candidata_points数量 support_points数量 block_D
 std::vector<multi_partition::BlockStat> multi_partition::get_block_stats(size_t lvl, const std::vector<Node>& global_wall) const
 {
@@ -639,4 +688,42 @@ std::vector<multi_partition::BlockStat> multi_partition::get_block_stats(size_t 
         }
         return stats;
     }
+}
+
+// 为每个层级的分区构建BVH外层树，用于INN算法
+// 输入：当前层级
+// 输出：所构建的BVH外层树的叶子数
+std::size_t multi_partition::build_bvh_for_level(std::size_t lvl)
+{
+    if (bvh_per_level_.size() < levels_)
+    {
+        bvh_per_level_.resize(levels_);
+    }
+
+    const auto& blks = blocks_per_level_.at(lvl);    // 取当前的分区数组
+
+    std::vector<PartitionLeaf> leaves;
+    leaves.reserve(blks.size());     // 预先分配空间
+
+    for (const auto& b : blks)
+    {
+        if (!b.has_aabb) continue;    //跳过空分区
+
+        // 构建分区对应的叶节点
+        PartitionLeaf leaf;
+        leaf.block_id = b.block_id; 
+        leaf.box.bmin = b.aabb_min;
+        leaf.box.bmax = b.aabb_max;
+
+        // 计算维度
+        const auto dim = static_cast<int>(b.aabb_min.size());
+        for (int d = 0; d < dim; ++d)
+        {
+            leaf.centroid[d] = 0.5 * (b.aabb_min[d] + b.aabb_max[d]);   // 计算质心
+        }
+
+        leaves.push_back(std::move(leaf));
+    }
+    bvh_per_level_[lvl].build(std::move(leaves));
+    return bvh_per_level_[lvl].leaf_count();
 }
