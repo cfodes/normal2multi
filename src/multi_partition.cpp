@@ -608,3 +608,35 @@ void multi_partition::find_moving_and_static_bndry(
     // 静边界取二者较小
     i_d_r2omega2 = std::min(candidate_static, d_unique);
 }
+
+
+// 获取每级每个分区的block_id candidata_points数量 support_points数量 block_D
+std::vector<multi_partition::BlockStat> multi_partition::get_block_stats(size_t lvl, const std::vector<Node>& global_wall) const
+{
+    const auto& blks = blocks_per_level_.at(lvl);
+    const auto& rbf = block_rbf_per_level_.at(lvl);
+    std::vector<multi_partition::BlockStat> stats(blks.size());
+    assert(blks.size() == rbf.size());    //分区数和分区RBF数目应该一致
+    if (lvl == 0)
+        //lvl = 0时整个物面为分区
+    {
+        for (size_t i = 0; i < blks.size(); ++i) {
+            stats[i].block_id = blks[i].block_id;
+            stats[i].candidate_points = global_wall.size();
+            stats[i].support_points = rbf[i].get_rbf().suppoints.size();
+            stats[i].block_D = blks[i].block_D; 
+        }
+        return stats;
+    }
+    else
+        //lvl>0的时候按照分区不同存储分区数据
+    {
+        for (size_t i = 0; i < blks.size(); ++i) {
+            stats[i].block_id = blks[i].block_id;
+            stats[i].candidate_points = rbf[i].get_rbf().external_suppoints.size();
+            stats[i].support_points = rbf[i].get_rbf().suppoints.size();
+            stats[i].block_D = blks[i].block_D;
+        }
+        return stats;
+    }
+}

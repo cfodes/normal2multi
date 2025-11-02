@@ -5,12 +5,8 @@
 #define PI acos(-1)
 using namespace std;
 
-// 两点距离
-double _distance(const Point<double>& P1, const Point<double>& P2) {
-    return std::sqrt((P1.x - P2.x) * (P1.x - P2.x)
-                   + (P1.y - P2.y) * (P1.y - P2.y)
-                   + (P1.z - P2.z) * (P1.z - P2.z));
-}
+
+
 
 // 物面节点提取函数
 //确定物面节点的数组，该函数确保节点不重复
