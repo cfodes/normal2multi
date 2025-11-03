@@ -381,14 +381,14 @@ void multi_partition::build_single_rbf_system(double tol, const State &S,
   block_rbf_per_level_[lvl].clear();
   block_rbf_per_level_[lvl].emplace_back(rbf_systems_per_level_[lvl][0]);
 
-  //// 直接调用“未预设 external_suppoints”的 Greedy 版本
-  //rbf_systems_per_level_[lvl][0].Greedy_algorithm(
-  //    unique_boundary_per_level_.at(lvl).at(0), tol, S);
+  // 直接调用“未预设 external_suppoints”的 Greedy 版本
+  rbf_systems_per_level_[lvl][0].Greedy_algorithm(
+      unique_boundary_per_level_.at(lvl).at(0), tol, S);
 
-  // ---- 直接用所有候选点一次性构建（不使用贪心）----
-  constexpr double kReg = 1e-12; // 矩阵迭代求解误差
-  rbf_systems_per_level_[lvl][0].BuildAll(
-      unique_boundary_per_level_.at(lvl).at(0), S, kReg);
+  //// ---- 直接用所有候选点一次性构建（不使用贪心）----
+  //constexpr double kReg = 1e-12; // 矩阵迭代求解误差
+  //rbf_systems_per_level_[lvl][0].BuildAll(
+  //    unique_boundary_per_level_.at(lvl).at(0), S, kReg);
 }
 
 // ===== 第 ≥1 层：每块一个 RBF 系统 =====
@@ -420,11 +420,13 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
     //    rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
     //}
 
-    // ---- 每块直接一次性构建（使用已填充的 external_suppoints）----
     constexpr double kReg = 1e-12; // 矩阵迭代求解误差
-    for (int i = 0; i < nb; ++i) {
+    for (int i = 0; i < nb; ++i)
+    {
         rbf_systems_per_level_[lvl][i].BuildAllFromExternal(S, kReg);
     }
+
+    
 }
 
 // ===== 第 0 层：纯 RBF 变形 =====
