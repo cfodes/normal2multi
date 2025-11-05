@@ -322,3 +322,118 @@ void writefile(const std::string& file_name, const State& S)
     }
 }
 
+void write_file_tecplot(const std::string& file_name, const State& S)
+{
+    // === 打开文件 ===
+    std::ofstream ofs(file_name);
+    if (!ofs.is_open()) {
+        throw std::runtime_error("Cannot open Tecplot file: " + file_name);
+    }
+
+    // === 头部 ===
+    ofs << "TITLE=\"Mesh export\"\n";
+    if (S.Dimension == 2) ofs << "VARIABLES=\"X\" \"Y\"\n";
+    else                  ofs << "VARIABLES=\"X\" \"Y\" \"Z\"\n";
+
+    // === 简单检查：节点 id 是否为 1..N 连续（若不满足需先归一化 id）===
+    {
+        if (!S.node_coords.empty()) {
+            // 收集并排序 id
+            std::vector<int> ids; ids.reserve(S.node_coords.size());
+            for (const auto& nd : S.node_coords) ids.push_back(nd.id);
+            std::sort(ids.begin(), ids.end());
+            if (ids.front() != 1 || ids.back() != (int)S.node_coords.size()) {
+                throw std::runtime_error("Node IDs are not contiguous 1..N; "
+                    "please renumber before Tecplot export.");
+            }
+            for (size_t i = 1; i < ids.size(); ++i) {
+                if (ids[i] != ids[i - 1] + 1) {
+                    throw std::runtime_error("Node IDs are not contiguous 1..N; "
+                        "please renumber before Tecplot export.");
+                }
+            }
+        }
+    }
+
+    // === 按 e_type 分桶 ===
+    std::vector<const element*> type3, type5, type9, type10, type12, others;
+    type3.reserve(S.every_elements.size());
+    type5.reserve(S.every_elements.size());
+    type9.reserve(S.every_elements.size());
+    type10.reserve(S.every_elements.size());
+    type12.reserve(S.every_elements.size());
+
+    for (const auto& e : S.every_elements) {
+        switch (e.e_type) {
+        case 3:  type3.push_back(&e);  break;   // line (2 节点)
+        case 5:  type5.push_back(&e);  break;   // tri  (3 节点)
+        case 9:  type9.push_back(&e);  break;   // quad (4 节点)
+        case 10: type10.push_back(&e); break;   // tet  (4 节点)
+        case 12: type12.push_back(&e); break;   // hex  (8 节点)
+        default: others.push_back(&e); break;   // 13/14 等
+        }
+    }
+    if (!others.empty()) {
+        throw std::runtime_error("Unsupported element types (e_type not in {3,5,9,10,12}).");
+    }
+
+    // === 一个 Zone 的通用写出（不做局部重映射，直接写全部节点 + 该类连通）===
+    auto write_zone = [&](const char* title,
+        const char* zonetype,
+        const std::vector<const element*>& elems)
+    {
+        if (elems.empty()) return;
+
+        const int N = (int)S.node_coords.size();
+        const int E = (int)elems.size();
+        ofs << "ZONE T=\"" << title << "\", N=" << N << ", E=" << E
+            << ", DATAPACKING=POINT, ZONETYPE=" << zonetype << "\n";
+
+        // 节点坐标
+        if (S.Dimension == 2) {
+            for (const auto& nd : S.node_coords) {
+                ofs << std::fixed << std::setprecision(13)
+                    << nd.point.x << " " << nd.point.y << "\n";
+            }
+        }
+        else {
+            for (const auto& nd : S.node_coords) {
+                ofs << std::fixed << std::setprecision(13)
+                    << nd.point.x << " " << nd.point.y << " " << nd.point.z << "\n";
+            }
+        }
+
+        // 连通表（使用 1..N 的全局 id）
+        for (const auto* ep : elems) {
+            const auto& nid = ep->node_id;
+            for (size_t k = 0; k < nid.size(); ++k) {
+                ofs << nid[k] << (k + 1 == nid.size() ? '\n' : ' ');
+            }
+        }
+    };
+
+    // === 按维度分别写 Zone ===
+    if (S.Dimension == 2) {
+        if (!type3.empty()) write_zone("LINE", "FELINESEG", type3);
+        if (!type5.empty()) write_zone("TRI", "FETRIANGLE", type5);
+        if (!type9.empty()) write_zone("QUAD", "FEQUADRILATERAL", type9);
+
+        // 如果 2D 网格中混入 3D 单元，忽略或提示（这里选择忽略）
+        if (!type10.empty() || !type12.empty()) {
+            // 可选：std::cerr << "[Tecplot] Warning: 2D mesh contains 3D elements; ignored.\n";
+        }
+    }
+    else { // 3D
+     // 3D 写体单元；若你也想把表面元素写出，可自行取消下面两行注释：
+     // if (!type3.empty()) write_zone("LINE", "FELINESEG", type3);
+     // if (!type5.empty()) write_zone("TRI",  "FETRIANGLE", type5);
+     // if (!type9.empty()) write_zone("QUAD", "FEQUADRILATERAL", type9);
+
+        if (!type10.empty()) write_zone("TET", "FETETRAHEDRON", type10);
+        if (!type12.empty()) write_zone("HEX", "FEBRICK", type12);
+    }
+
+    ofs.close();
+}
+
+

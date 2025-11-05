@@ -9,8 +9,9 @@ void readfile(std::string const& file_name, State& S);
 // 写网格文件
 void writefile(std::string const& file_name, const State& S);
 
-// 将物面节点写出
-void write_wall(const std::vector<Node>& wall_nodes, const std::string& file_name = "wall.dat");
+
+// 写网格文件，使用tecplot格式
+void write_file_tecplot(const std::string& file_name, const State& S);
 
 //字符串切割函数
 //该函数实现将字符串str里按split分隔符分开的字符，分别存入res里

@@ -89,6 +89,13 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
             }
 
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, external_suppoints, S);
+
+            // 立刻判断是否已满足精度
+            if (interp_tol[max_tol_id] < tol) {
+                rebuild_compact_buffers_from_current();
+                return; // 或者 break; 后续统一 rebuild
+            }
+
             // 计算变形量，插值误差以及最大误差所对应的max_tol_id，这个对应的是在wall_nodes里的索引
             // std::cout << "Step: " << i + 1 << std::endl;
             // std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
@@ -101,17 +108,20 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
             {
                 A[k].conservativeResize(n, n);
                 b[k].conservativeResize(n);
-                for (int j = 0; j < n - 1; ++j)
-                {
-                    eta_ij = _distance(suppoints[n - 1].point, suppoints[j].point);
-                    A[k](n - 1, j) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一行
-                    A[k](j, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一列，矩阵是对称正定的
 
-                    eta_ij = _distance(suppoints[n - 1].point, suppoints[n - 1].point);
-                    A[k](n - 1, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
-                    b[k](n - 1) = suppoints[n - 1].df[k];                // b向量最后一个元素
-                    coeff[k] = A[k].llt().solve(b[k]);                   // Cholesky分解插值系数
+                // 先完整填新行/列
+                for (int j = 0; j < n - 1; ++j) {
+                    const double d = _distance(suppoints[n - 1].point, suppoints[j].point);  // 点到点的距离
+                    const double phi = rbf_func_Wendland(d, S.R, S.invR);
+                    A[k](n - 1, j) = phi;    // 矩阵新的一行
+                    A[k](j, n - 1) = phi;    // 矩阵新的一列
                 }
+                A[k](n - 1, n - 1) = rbf_func_Wendland(0.0, S.R, S.invR);
+                b[k](n - 1) = suppoints[n - 1].df[k];
+                
+                // 再求解一次
+                coeff[k] = A[k].llt().solve(b[k]);
+
             }
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, external_suppoints, S);
             // 计算变形量，插值误差以及最大误差所对应的max_tol_i，这个对应的是在wall_nodes里的索引
@@ -172,6 +182,13 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
             }
 
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, wall_nodes, S);
+
+            // 立刻判断是否已满足精度
+            if (interp_tol[max_tol_id] < tol) {
+                rebuild_compact_buffers_from_current();
+                return; // 或者 break; 后续统一 rebuild
+            }
+
             // 计算变形量，插值误差以及最大误差所对应的max_tol_id，这个对应的是在wall_nodes里的索引
             // std::cout << "Step: " << i + 1 << std::endl;
             // std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
@@ -184,17 +201,20 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
             {
                 A[k].conservativeResize(n, n);
                 b[k].conservativeResize(n);
-                for (int j = 0; j < n - 1; ++j)
-                {
-                    eta_ij = _distance(suppoints[n - 1].point, suppoints[j].point);
-                    A[k](n - 1, j) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一行
-                    A[k](j, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 插入矩阵新的一列，矩阵是对称正定的
 
-                    eta_ij = _distance(suppoints[n - 1].point, suppoints[n - 1].point);
-                    A[k](n - 1, n - 1) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
-                    b[k](n - 1) = suppoints[n - 1].df[k];                // b向量最后一个元素
-                    coeff[k] = A[k].llt().solve(b[k]);                   // Cholesky分解插值系数
+                // 先完整填新行/列
+                for (int j = 0; j < n - 1; ++j) {
+                    const double d = _distance(suppoints[n - 1].point, suppoints[j].point);  // 点到点的距离
+                    const double phi = rbf_func_Wendland(d, S.R, S.invR);    
+                    A[k](n - 1, j) = phi;    // 矩阵新的一行
+                    A[k](j, n - 1) = phi;    // 矩阵新的一列
                 }
+                A[k](n - 1, n - 1) = rbf_func_Wendland(0.0, S.R, S.invR);
+                b[k](n - 1) = suppoints[n - 1].df[k];
+
+                // 再求解一次
+                coeff[k] = A[k].llt().solve(b[k]);
+
             }
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, wall_nodes, S);
             // 计算变形量，插值误差以及最大误差所对应的max_tol_i，这个对应的是在wall_nodes里的索引
@@ -571,7 +591,8 @@ void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
         rbf.external_suppoints.clear();
 
         std::unordered_set<int> used_ids;
-        d_temp = blk_i.block_D;
+        d_temp = blk_i.block_D * 0.2;
+        //d_temp = d_temp * 0.2;
 
         // 1) 自己块的 internal 直接加入（保留 df）
         for (const auto& nd : blocks[i].internal_nodes) 

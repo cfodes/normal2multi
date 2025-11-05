@@ -130,4 +130,7 @@ public:
         out.d2 = std::min(out.d_other, out.d_u);
         return out;
     }
+
+    
+
 };
