@@ -13,6 +13,8 @@
 #include "State.hpp"
 #include "partition_bvh.hpp"
 #include "partition_inn.hpp"    // INN searching Algorithm
+#include "meshio.hpp"
+#include <filesystem>    // write mesh
 
 // 多级 METIS 分区 + 分组 RBF 主控类
 class multi_partition {
@@ -70,6 +72,8 @@ public:
     struct BlockStat
     {
         int block_id = -1;
+        size_t internal_points = 0;
+        size_t boundary_points = 0;
         size_t candidate_points = 0;
         size_t support_points = 0;
         double block_D = 0.0;

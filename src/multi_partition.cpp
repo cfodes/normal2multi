@@ -238,6 +238,7 @@ void multi_partition::multi_partition_rbf_algorithm(
         std::cout << "[lvl=" << lvl << "] update coordinates time: "
             << update_ms << " ms\n";
         level_timings_[lvl].update_coords_ms = update_ms;
+
     }
 }
 
@@ -422,8 +423,11 @@ void multi_partition::build_multiple_rbf_systems(double tol, const State& S, siz
     // 每块做一次 Greedy_algorithm（使用 external_suppoints）
     for (int i = 0; i < nb; ++i) {
         rbf_systems_per_level_[lvl][i].Greedy_algorithm(tol, S);
+        //std::cout << i << std::endl;
     }
 
+
+    //// buildall
     //constexpr double kReg = 1e-12; // 矩阵迭代求解误差
     //for (int i = 0; i < nb; ++i)
     //{
@@ -676,9 +680,15 @@ std::vector<multi_partition::BlockStat> multi_partition::get_block_stats(size_t 
     if (lvl == 0)
         //lvl = 0时整个物面为分区
     {
+        size_t unique0 = 0;
+        if (!unique_boundary_per_level_.empty() && !unique_boundary_per_level_[0].empty()) {
+            unique0 = unique_boundary_per_level_[0][0].size();
+        }
         for (size_t i = 0; i < blks.size(); ++i) {
             stats[i].block_id = blks[i].block_id;
-            stats[i].candidate_points = global_wall.size();
+            stats[i].internal_points = blks[i].internal_nodes.size();
+            stats[i].boundary_points = blks[i].boundary_nodes.size();
+            stats[i].candidate_points = unique0;
             stats[i].support_points = rbf[i].get_rbf().suppoints.size();
             stats[i].block_D = blks[i].block_D;
         }
@@ -689,6 +699,8 @@ std::vector<multi_partition::BlockStat> multi_partition::get_block_stats(size_t 
     {
         for (size_t i = 0; i < blks.size(); ++i) {
             stats[i].block_id = blks[i].block_id;
+            stats[i].internal_points = blks[i].internal_nodes.size();
+            stats[i].boundary_points = blks[i].boundary_nodes.size();
             stats[i].candidate_points = rbf[i].get_rbf().external_suppoints.size();
             stats[i].support_points = rbf[i].get_rbf().suppoints.size();
             stats[i].block_D = blks[i].block_D;

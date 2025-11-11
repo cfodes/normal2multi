@@ -63,6 +63,7 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
                                                                    // 传入参数：误差 tol
                                                                    //          参数结构体 S
 {
+
     // std::cout << "=====================" << endl;
     // std::cout << "Starting Greedy algorithm ... " << std::endl;
 
@@ -72,6 +73,7 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
     double eta_ij = 0;
     int max_tol_id = 0;
     double max_tol_i = 0;
+
     for (int i = 0; i < external_suppoints.size(); ++i)
     {
         if (i == 0)
@@ -85,7 +87,16 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
                 eta_ij = _distance(suppoints[i].point, suppoints[i].point);
                 A[k](i, i) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
                 b[k](i) = suppoints[i].df[k];
-                coeff[k] = A[k].llt().solve(b[k]); // Cholesky分解插值系数
+                //coeff[k] = A[k].llt().solve(b[k]); // Cholesky分解插值系数
+
+                // 鲁棒求解
+                double added_reg = 0.0;
+                coeff[k] = robust_symmetric_solve(A[k], b[k], &added_reg);
+                // 可选：加一点日志，便于你验证到底发生了什么
+                // if (added_reg == 0.0)           std::cout << "[Greedy] LLT ok\n";
+                // else if (added_reg > 0.0)       std::cout << "[Greedy] LLT+reg lambda=" << added_reg << "\n";
+                // else /* added_reg < 0 */        std::cout << "[Greedy] LDLT fallback\n";
+
             }
 
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, external_suppoints, S);
@@ -120,10 +131,18 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
                 b[k](n - 1) = suppoints[n - 1].df[k];
                 
                 // 再求解一次
-                coeff[k] = A[k].llt().solve(b[k]);
+                //coeff[k] = A[k].llt().solve(b[k]);
 
+                // 鲁棒求解
+                double added_reg = 0.0;
+                coeff[k] = robust_symmetric_solve(A[k], b[k], &added_reg);
+                // 可选：加一点日志，便于你验证到底发生了什么
+                // if (added_reg == 0.0)           std::cout << "[Greedy] LLT ok\n";
+                // else if (added_reg > 0.0)       std::cout << "[Greedy] LLT+reg lambda=" << added_reg << "\n";
+                // else /* added_reg < 0 */        std::cout << "[Greedy] LDLT fallback\n";
             }
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, external_suppoints, S);
+
             // 计算变形量，插值误差以及最大误差所对应的max_tol_i，这个对应的是在wall_nodes里的索引
             if (i % 99 == 0) // 打印信息
             {
@@ -142,7 +161,7 @@ void RBFInterpolator::Greedy_algorithm(double tol, const State &S) // 使用贪�
             {
                 // std::cout << "Step: " << i + 1 << std::endl;
                 // std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
-                std::cout << "every boundary nodes have been chosen (this will happen especially when the nodes are selected in boundary nodes shared by blocks)" << std::endl;
+                // std::cout << "every boundary nodes have been chosen (this will happen especially when the nodes are selected in boundary nodes shared by blocks)" << std::endl;
             }
         }
     }
@@ -178,7 +197,15 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
                 eta_ij = _distance(suppoints[i].point, suppoints[i].point);
                 A[k](i, i) = rbf_func_Wendland(eta_ij, S.R, S.invR); // 对角线元素
                 b[k](i) = suppoints[i].df[k];
-                coeff[k] = A[k].llt().solve(b[k]); // Cholesky分解插值系数
+                //coeff[k] = A[k].llt().solve(b[k]); // Cholesky分解插值系数
+
+                // 鲁棒求解
+                double added_reg = 0.0;
+                coeff[k] = robust_symmetric_solve(A[k], b[k], &added_reg);
+                // 可选：加一点日志，便于你验证到底发生了什么
+                // if (added_reg == 0.0)           std::cout << "[Greedy] LLT ok\n";
+                // else if (added_reg > 0.0)       std::cout << "[Greedy] LLT+reg lambda=" << added_reg << "\n";
+                // else /* added_reg < 0 */        std::cout << "[Greedy] LDLT fallback\n";
             }
 
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, wall_nodes, S);
@@ -213,7 +240,15 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
                 b[k](n - 1) = suppoints[n - 1].df[k];
 
                 // 再求解一次
-                coeff[k] = A[k].llt().solve(b[k]);
+                //coeff[k] = A[k].llt().solve(b[k]);
+
+                // 鲁棒求解
+                double added_reg = 0.0;
+                coeff[k] = robust_symmetric_solve(A[k], b[k], &added_reg);
+                // 可选：加一点日志，便于你验证到底发生了什么
+                // if (added_reg == 0.0)           std::cout << "[Greedy] LLT ok\n";
+                // else if (added_reg > 0.0)       std::cout << "[Greedy] LLT+reg lambda=" << added_reg << "\n";
+                // else /* added_reg < 0 */        std::cout << "[Greedy] LDLT fallback\n";
 
             }
             calculate_df(coeff, suppoints, P_df, interp_tol, max_tol_id, wall_nodes, S);
@@ -221,8 +256,8 @@ void RBFInterpolator::Greedy_algorithm(const std::vector<Node> &wall_nodes, doub
             if (i % 99 == 0) // 打印信息
             {
                 // 计算变形量，插值误差以及最大误差所对应的max_tol_id，这个对应的是在wall_nodes里的索引
-                 std::cout << "Step: " << i + 1 << std::endl;
-                 std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
+                 //std::cout << "Step: " << i + 1 << std::endl;
+                 //std::cout << "max tol: " << std::fixed << std::setprecision(13) << interp_tol[max_tol_id] << std::endl;
             }
             if (interp_tol[max_tol_id] < tol)
             {
@@ -591,8 +626,8 @@ void set_block_rbf(std::vector<DeformCalculator>& block_rbf,
         rbf.external_suppoints.clear();
 
         std::unordered_set<int> used_ids;
-        d_temp = blk_i.block_D * 0.2;
-        //d_temp = d_temp * 0.2;
+        d_temp = blk_i.block_D;
+        // d_temp = d_temp * 0.2;
 
         // 1) 自己块的 internal 直接加入（保留 df）
         for (const auto& nd : blocks[i].internal_nodes) 

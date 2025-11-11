@@ -68,6 +68,15 @@ inline double psi(double d1, double d2, double D, const State& S)
 class RBFInterpolator 
 {
 public:
+
+
+    // public 增加
+    void set_debug_trace(bool on, const std::string& tag = {}) {
+        trace_ = on;
+        trace_tag_ = tag;
+    }
+
+
     std::vector<Node> suppoints;   //选择的支撑点
     std::vector<Node> external_suppoints;   //外部传入的待选取的支撑点
     std::vector<double> interp_tol;   //插值误差数组，索引和wall_nodes对应
@@ -107,6 +116,45 @@ public:
 
     //从现有的suppoints/coeff 构建紧凑缓冲，用以优化效率
     void rebuild_compact_buffers_from_current();
+private:
+
+    // RBFInterpolator 类里（private 增加）
+    bool trace_ = false;
+    std::string trace_tag_;
+
+    static inline Eigen::VectorXd robust_symmetric_solve(Eigen::MatrixXd& A,
+        const Eigen::VectorXd& b,
+        double* out_added_reg = nullptr)
+    {
+        // 先尝试 LLT
+        {
+            Eigen::LLT<Eigen::MatrixXd> llt(A);
+            if (llt.info() == Eigen::Success) {
+                if (out_added_reg) *out_added_reg = 0.0;
+                return llt.solve(b);
+            }
+        }
+        // 自适应极小对角正则再试 LLT（nugget）
+        const double diag_mean = A.diagonal().cwiseAbs().mean();
+        const double eps_base = std::max(1.0, diag_mean);
+        double       lambda = 1e-12 * eps_base; // 先加一个很小的
+        for (int trial = 0; trial < 2; ++trial) {
+            Eigen::MatrixXd A2 = A;
+            A2.diagonal().array() += lambda;
+            Eigen::LLT<Eigen::MatrixXd> llt2(A2);
+            if (llt2.info() == Eigen::Success) {
+                if (out_added_reg) *out_added_reg = lambda;
+                return llt2.solve(b);
+            }
+            lambda *= 1e3; // 再强一点
+        }
+        // 兜底：LDLT（带主元）——对称不定/半正定更稳健
+        if (out_added_reg) *out_added_reg = -1.0; // 标记走了 LDLT
+        Eigen::LDLT<Eigen::MatrixXd> ldlt;
+        ldlt.compute(A);
+        return ldlt.solve(b);
+    }
+
 };
 
 // 利用插值系数计算变形的工具类
