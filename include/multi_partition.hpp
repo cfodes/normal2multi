@@ -15,6 +15,7 @@
 #include "partition_inn.hpp"    // INN searching Algorithm
 #include "meshio.hpp"
 #include "global_kdtree.hpp"  // 全局kd-tree
+#include "drrbf_distance_gate.hpp"  // Dm 预筛
 #include <filesystem>    // write mesh
 
 // 多级 METIS 分区 + 分组 RBF 主控类
@@ -119,6 +120,8 @@ private:
     //  - lvl == 0: 不使用此结构；
     //  - lvl >= 1: 由该层所有 mesh_block 的 block_tree 采样点构建。
     std::vector<GlobalKDTree> global_kdtree_per_level_;
+    // 每层 block_D 的最大值（Dm 阈值，用于 DRRBF 预筛）
+    std::vector<double> max_block_D_per_level_;
 
 private:
     // ===== 内部工具 =====
@@ -191,6 +194,7 @@ private:
 
     // 为某一层级构建全局 KD 树
     std::size_t build_global_kdtree_for_level(std::size_t lvl);
+    void update_max_block_D_for_level(std::size_t lvl);
 
     // 使用全局 KD 树查询“动/静边界距离”
     void find_moving_and_static_bndry_with_kdtree(
@@ -201,4 +205,3 @@ private:
         std::size_t lvl
     ) const;
 };
-

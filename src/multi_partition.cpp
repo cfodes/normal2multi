@@ -138,6 +138,8 @@ void multi_partition::multi_partition_rbf_algorithm(
 
     level_timings_.assign(levels_, LevelTiming{});
     level_statistics_.assign(levels_, LevelStatistics{});
+    global_kdtree_per_level_.assign(levels_, GlobalKDTree{});
+    max_block_D_per_level_.assign(levels_, 0.0);
 
     set_wall_id2nodes(wall_id2nodes_, wall_nodes); // 构建物面的索引和id的查找集
     std::vector<Node> wall_accurate = set_accurate_wall(
@@ -160,6 +162,7 @@ void multi_partition::multi_partition_rbf_algorithm(
             update_unique_bndry_nodes(wall_prev, static_cast<int>(lvl));
             // 根据更新后的wall_prev重新设置分区内部的节点待变形量，并且计算了分区的block_D!!!
             set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
+            update_max_block_D_for_level(lvl);
             // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
             set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
             // 构建分区的BVH外层树，用于INN算法展开最近邻的几个分区以查找最邻近的点
@@ -463,38 +466,46 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     tasks.reserve(coords.size());
 
     constexpr bool kUseGlobalKDTree = true; // 使用全局KD树开关
+    const double Dm = (lvl < max_block_D_per_level_.size()) ? max_block_D_per_level_[lvl] : 0.0;
+    const bool enable_prefilter = (lvl > 0) && (Dm > 0.0) &&
+        (lvl < global_kdtree_per_level_.size()) &&
+        !global_kdtree_per_level_[lvl].empty();
 
     const auto t_search_start = high_resolution_clock::now();
     for (auto& inode : coords) {
         NodeTask task;
         task.node = &inode;
 
-        //// --- 查找动边界和静边界 ---
-        //find_moving_and_static_bndry(inode, blks,
-        //                             task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);   //查找最近的动边界和静边界
-
-        // -- - 查找动边界和静边界-- -
-            if (kUseGlobalKDTree) {   // 使用全局KD树
-                find_moving_and_static_bndry_with_kdtree(
-                    inode,
-                    task.moving_blk_id,
-                    task.d_r2omega1,
-                    task.d_r2omega2,
-                    lvl);
-            }
-            else {    // 使用外层BVH，BVH叶节点为分区内部点的block_tree
-                find_moving_and_static_bndry_with_bvh(
-                    inode, blks,
-                    task.moving_blk_id, task.d_r2omega1, task.d_r2omega2,
-                    lvl);
-            }
-
-
-
         // --- 历史 unique_bndry 节点不再变形 ---
         if (global_unique_bndry_set_.find(inode.id) != global_unique_bndry_set_.end()) {
             inode.df.setZero();
             task.skip = true;
+            tasks.push_back(task);
+            continue;
+        }
+
+        if (enable_prefilter) {
+            if (!drrbf::has_neighbor_within_Dm(global_kdtree_per_level_[lvl], inode.point, Dm)) {
+                inode.df.setZero();
+                task.skip = true;
+                tasks.push_back(task);
+                continue;
+            }
+        }
+
+        if (kUseGlobalKDTree) {   // 使用全局KD树
+            find_moving_and_static_bndry_with_kdtree(
+                inode,
+                task.moving_blk_id,
+                task.d_r2omega1,
+                task.d_r2omega2,
+                lvl);
+        }
+        else {    // 使用外层BVH，BVH叶节点为分区内部点的block_tree
+            find_moving_and_static_bndry_with_bvh(
+                inode, blks,
+                task.moving_blk_id, task.d_r2omega1, task.d_r2omega2,
+                lvl);
         }
 
         tasks.push_back(task);
@@ -835,3 +846,15 @@ std::size_t multi_partition::build_global_kdtree_for_level(std::size_t lvl)
     return count;
 }
 
+void multi_partition::update_max_block_D_for_level(std::size_t lvl)
+{
+    if (max_block_D_per_level_.size() < levels_) {
+        max_block_D_per_level_.resize(levels_, 0.0);
+    }
+    double dm = 0.0;
+    const auto& blks = blocks_per_level_.at(lvl);
+    for (const auto& blk : blks) {
+        dm = std::max(dm, blk.block_D);
+    }
+    max_block_D_per_level_[lvl] = dm;
+}
