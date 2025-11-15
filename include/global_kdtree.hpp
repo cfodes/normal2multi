@@ -4,112 +4,183 @@
 #include <limits>
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include "geometry.hpp"
 
-// Simple AABB for 3D points
-struct GK_AABB {
-    Point<double> bmin{std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity(),
-                       std::numeric_limits<double>::infinity()};
-    Point<double> bmax{-std::numeric_limits<double>::infinity(),
-                       -std::numeric_limits<double>::infinity(),
-                       -std::numeric_limits<double>::infinity()};
+#include "geometry.hpp"      // Point<double>
+#include "partition_bvh.hpp" // AABB ¶¨ÒåÔÚÕâÀï
 
-    inline void expand(const Point<double>& p) {
-        for (int d = 0; d < 3; ++d) {
-            if (p[d] < bmin[d]) bmin[d] = p[d];
-            if (p[d] > bmax[d]) bmax[d] = p[d];
-        }
-    }
-
-    inline double mindist2(const Point<double>& q) const {
-        double acc = 0.0;
-        for (int d = 0; d < 3; ++d) {
-            const double v = q[d];
-            const double lo = bmin[d];
-            const double hi = bmax[d];
-            double diff = 0.0;
-            if (v < lo) diff = lo - v;
-            else if (v > hi) diff = v - hi;
-            acc += diff * diff;
-        }
-        return acc;
-    }
+/// --------------------------------------------------------------------------------------
+/// Ò»¸ö¡°¶¯±ß½ç²ÉÑùµã¡±
+///  - pos      : È«¾Ö×ø±ê£¨À´×Ô block_tree.grid(i)£©
+///  - block_id : ¸ÃµãËùÊô mesh_block µÄ block_id
+///  - node_id  : ¶ÔÓ¦µÄÈ«¾Ö½Úµã id£¨¿ÉÑ¡£¬½öÓÃÓÚµ÷ÊÔ»òÀ©Õ¹£©
+/// --------------------------------------------------------------------------------------
+struct MovingPoint
+{
+    Point<double> pos{};
+    int           block_id = -1;
+    int           node_id = -1;
 };
 
-struct MovingPoint {
-    Point<double> pos;   // åæ ‡
-    int           block_id = -1; // æ‰€å± block
-    int           node_id  = -1; // åŸå§‹ Node.idï¼ˆå¯é€‰ï¼‰
-};
-
-struct KDNode {
-    GK_AABB box;
-    int  left  = -1;
+/// --------------------------------------------------------------------------------------
+/// KD Ê÷½Úµã
+///  - box       : ×ÓÊ÷°üÎ§ºĞ£¨ÓÃÏÖ³ÉµÄ AABB£©
+///  - left/right: ×Ó½ÚµãÔÚ nodes_ Êı×éÖĞµÄË÷Òı£¨-1 ±íÊ¾ÎŞ£©
+///  - [begin,end): ¸Ã½Úµã¶ÔÓ¦µÄ pts_ ÏÂ±ê·¶Î§£¨½öÒ¶×Ó½ÚµãÓĞÒâÒå£©
+///  - axis/split: »®·ÖÎ¬¶È + ÇĞ·ÖÎ»ÖÃ
+///  - mono_block: Èô¸Ã×ÓÊ÷ËùÓĞµãµÄ block_id ÏàÍ¬£¬ÔòÎª¸Ã id£»·ñÔòÎª -1
+///  - is_leaf   : ÊÇ·ñÎªÒ¶×Ó½Úµã
+/// --------------------------------------------------------------------------------------
+struct KDNode
+{
+    AABB box{};
+    int  left = -1;
     int  right = -1;
 
-    int  begin = 0;    // å¶å­åŒºé—´ [begin, end)
-    int  end   = 0;
-    int  axis  = 0;
+    int  begin = 0;
+    int  end = 0;
+
+    int    axis = 0;
     double split = 0.0;
 
-    int  mono_block = -1; // å­æ ‘æ˜¯å¦å…¨ä¸ºåŒä¸€ blockï¼›å¦åˆ™ä¸º -1
+    int  mono_block = -1;
     bool is_leaf = false;
 };
 
-class GlobalKDTree {
+/// --------------------------------------------------------------------------------------
+/// GlobalKDTree
+/// Õë¶Ô¡°µ±Ç°²ã¼¶µÄËùÓĞ·ÖÇø¡±µÄÄÚ²¿½Úµã¼¯ºÏ£¬¹¹½¨Ò»¿ÃÈ«¾Ö KD Ê÷£º
+///  - ²ÉÑùµãÀ´×ÔÃ¿¸ö mesh_block µÄ block_tree£¨¼´ÄãÏÖÔÚÓÃÀ´×ö¾àÀëËÑË÷µÄÄÇÅúµã£©
+///  - Ã¿¸öµã´øÓĞËùÊô block_id
+///  - Ìá¹© query_point(...)£º
+///       ¸ø¶¨²éÑ¯µã q ºÍ du£¨µ½ÀúÊ· unique ±ß½çµÄ¾àÀë£©
+///       ·µ»Ø£º×î½ü¶¯±ß½ç¾àÀë d1¡¢¾²±ß½ç¾àÀë d2£¬ÒÔ¼°ÖĞ¼äµÄ d_other/d_u
+/// --------------------------------------------------------------------------------------
+class GlobalKDTree
+{
 public:
-    GlobalKDTree() = default;
+    GlobalKDTree() : root_(-1) {}
 
+    /// ------------------------------------------------------------------
+    /// ´Óµ±Ç°²ã¼¶µÄ mesh_block Êı×é¹¹½¨ KD Ê÷
+    ///
+    /// ¹Ø¼üµã£ºÎªÁË±£Ö¤ÓëÔ­ÓĞ block_tree ËÑË÷ÍêÈ«Ò»ÖÂ£¬²ÉÑùµã²»´Ó
+    /// internal_nodes µÈÈİÆ÷È¡£¬¶øÊÇÖ±½Ó´Ó
+    ///   blk.block_tree.grid_size()
+    ///   blk.block_tree.grid(i)
+    ///   blk.block_tree.key(i)
+    /// ¶ÁÈ¡¡£
+    ///
+    /// Blocks ¿ÉÒÔÊÇ std::vector<mesh_block> »òÈÎºÎÖ§³Ö range-for
+    /// ÇÒÓµÓĞ³ÉÔ±£º
+    ///   int block_id;
+    ///   <Ä³¸öÀàĞÍ> block_tree;
+    ///   block_tree.grid_size() -> int
+    ///   block_tree.grid(i)     -> Point<double> const&
+    ///   block_tree.key(i)      -> int
+    /// ------------------------------------------------------------------
     template<class Blocks>
-    void build_from_blocks(const Blocks& blks) {
+    void build_from_blocks(const Blocks& blks)
+    {
         pts_.clear();
-        // é¢„ä¼°å®¹é‡
-        size_t estimate = 0;
-        for (const auto& b : blks) estimate += b.internal_nodes.size();
-        pts_.reserve(estimate);
+
+        // Ô¤¹À×ÜµãÊıÒÔ¼õÉÙ realloc
+        std::size_t total = 0;
+        for (const auto& b : blks) {
+            const int n = b.block_tree.grid_size();
+            if (n > 0) total += static_cast<std::size_t>(n);
+        }
+        pts_.reserve(total);
 
         for (const auto& b : blks) {
-            if (b.internal_nodes.empty()) continue;
-            for (const auto& nd : b.internal_nodes) {
+            const int n = b.block_tree.grid_size();
+            if (n <= 0) continue;
+
+            for (int i = 0; i < n; ++i) {
                 MovingPoint mp;
-                mp.pos = nd.point;
+                mp.pos = b.block_tree.grid(i); // ÕæÊµ²ÉÑùµã×ø±ê
                 mp.block_id = b.block_id;
-                mp.node_id = nd.id;
+                mp.node_id = b.block_tree.key(i);   // È«¾Ö½Úµã id£¨¿ÉÑ¡£©
                 pts_.push_back(std::move(mp));
             }
         }
 
         nodes_.clear();
-        if (pts_.empty()) { root_ = -1; return; }
-        nodes_.reserve(pts_.size() * 2);
-        root_ = build_range(0, static_cast<int>(pts_.size()));
-    }
-
-    bool empty() const noexcept { return root_ < 0; }
-
-    void query_point(
-        const Point<double>& q,
-        double du2,
-        double& d1, int& moving_block_id,
-        double& d2, double& d_other, double& d_u
-    ) const {
-        double best1_d2; int b1;
-        nearest_pass1(q, best1_d2, b1);
-
-        if (b1 < 0 || !std::isfinite(best1_d2)) {
-            d1 = d2 = d_other = d_u = std::numeric_limits<double>::infinity();
-            moving_block_id = -1;
+        if (pts_.empty()) {
+            root_ = -1;
             return;
         }
 
-        moving_block_id = b1;
-        d1 = std::sqrt(best1_d2);
-        d_u = std::sqrt(du2);
+        root_ = build_range(0, static_cast<int>(pts_.size()));
+    }
 
-        double best_other_d2;
-        double best_d2 = du2; // åˆå§‹ç”± du2 ç»™å‡ºä¸Šç•Œ
+    /// KD Ê÷ÊÇ·ñÎª¿Õ
+    bool empty() const noexcept { return root_ < 0; }
+
+    /// ²ÉÑùµã×ÜÊı£¨½öÓÃÓÚÍ³¼Æ/µ÷ÊÔ£©
+    std::size_t point_count() const noexcept { return pts_.size(); }
+
+    /// ------------------------------------------------------------------
+    /// ²éÑ¯º¯Êı£º¸ø¶¨²éÑ¯µã q ºÍ du£¨µ½ÀúÊ· unique ±ß½çµÄ¾àÀë£©
+    ///
+    /// ÊäÈë£º
+    ///   q  : ²éÑ¯µã×ø±ê
+    ///   du : µ½ÀúÊ· unique ±ß½ç×î½ü¾àÀë£¨ÏßĞÔ¾àÀë£¬Èô²»´æÔÚÔò´« +inf£©
+    ///
+    /// Êä³ö£º
+    ///   moving_blk_id : ×î½ü¶¯±ß½çËùÔÚ·ÖÇø id£¨block_id£©
+    ///   d1            : ×î½ü¶¯±ß½ç¾àÀë£¨ÏßĞÔ£©
+    ///   d2            : ¾²±ß½ç¾àÀë = min( d_other, d_u )£¨ÏßĞÔ£©
+    ///   d_other       : À´×Ô¡°ÆäËü·ÖÇø¡±µÄ×î½ü¾àÀë£¨ÏßĞÔ£©
+    ///   d_u           : du£¨Ö±½Ó·µ»Ø£¬ÏßĞÔ£©
+    ///
+    /// ÊµÏÖË¼Â·£º
+    ///   1) Pass1: ±ê×¼ KD-tree ×î½üÁÚ£¬µÃµ½×î½üµã (d1, block_id = b1)
+    ///   2) Pass2: ÔÚÍ¬Ò»¿ÃÊ÷ÉÏÔÙ´Î±éÀú£¬µ«£º
+    ///        - ¶Ô mono_block == b1 µÄ×ÓÊ÷Õû¿Ã¼ôÖ¦
+    ///        - ½öÓÃ block != b1 µÄµã¸üĞÂ d_other
+    ///        - Í¬Ê±Ê¹ÓÃ du^2 ×÷Îª³õÊ¼ÉÏ½ç×ö¼ôÖ¦
+    ///   3) d2 = min( d_other, du )
+    /// ------------------------------------------------------------------
+    void query_point(
+        const Point<double>& q,
+        double du,
+        int& moving_blk_id,
+        double& d1,
+        double& d2,
+        double& d_other,
+        double& d_u
+    ) const
+    {
+        moving_blk_id = -1;
+        d1 = d2 = d_other = d_u =
+            std::numeric_limits<double>::infinity();
+
+        if (root_ < 0 || pts_.empty()) {
+            return; // Ã»ÓĞ¶¯±ß½çµã
+        }
+
+        // ============ Pass 1: ×î½ü¶¯±ß½ç d1, b1 ======================
+        double best1_d2 = std::numeric_limits<double>::infinity();
+        int    b1 = -1;
+        nearest_pass1(q, best1_d2, b1);
+
+        if (b1 < 0 || !std::isfinite(best1_d2)) {
+            // ÀíÂÛÉÏ²»Ó¦¸Ã·¢Éú£¬³ı·Ç KD Ê÷¹¹½¨Ê§°Ü
+            return;
+        }
+
+        moving_blk_id = b1;
+        d1 = std::sqrt(best1_d2);
+
+        // du: ÀúÊ· unique_bndry ¾àÀë
+        d_u = du;
+        const double du2 = std::isfinite(du)
+            ? du * du
+            : std::numeric_limits<double>::infinity();
+
+        // ============ Pass 2: ÅÅ³ı b1£¬Ö»¿´ÆäËü·ÖÇøµÄ×î½ü¾àÀë ============
+        double best_other_d2 = std::numeric_limits<double>::infinity();
+        double best_d2 = du2; // d2^2 µÄµ±Ç°ÉÏ½ç£º³õÊ¼È¡ du^2
         nearest_pass2_other(q, b1, best_other_d2, best_d2);
 
         d_other = std::sqrt(best_other_d2);
@@ -118,161 +189,275 @@ public:
     }
 
 private:
-    int root_ = -1;
-    std::vector<KDNode>      nodes_;
+    int                   root_;
+    std::vector<KDNode>   nodes_;
     std::vector<MovingPoint> pts_;
 
-    static inline double sqdist_pt_pt(const Point<double>& a, const Point<double>& b) {
-        const double dx = a.x - b.x;
-        const double dy = a.y - b.y;
-        const double dz = a.z - b.z;
-        return dx*dx + dy*dy + dz*dz;
+    // ----------------------------------------------------------------------------------
+    // ¸¨Öúº¯Êı£ºÁ½µã¼äÆ½·½¾àÀë
+    // Ê¹ÓÃ Point<double>::size() ºÍ operator[]£¬Óë AABB::mindist2 Ò»ÖÂ¡£
+    // ----------------------------------------------------------------------------------
+    static double squared_distance(const Point<double>& a,
+        const Point<double>& b)
+    {
+        const int dim = static_cast<int>(a.size());
+        double s = 0.0;
+        for (int d = 0; d < dim; ++d) {
+            const double diff = a[d] - b[d];
+            s += diff * diff;
+        }
+        return s;
     }
 
-    int build_range(int begin, int end) {
+    // ----------------------------------------------------------------------------------
+    // µİ¹é¹¹½¨ KD Ê÷£ºÔÚ [begin, end) ·¶Î§ÄÚ¹¹½¨×ÓÊ÷£¬·µ»Ø¸ù½ÚµãË÷Òı
+    // ----------------------------------------------------------------------------------
+    int build_range(int begin, int end)
+    {
         const int n = end - begin;
+        const int dim = static_cast<int>(pts_[begin].pos.size());
 
-        GK_AABB box;
-        for (int i = begin; i < end; ++i) box.expand(pts_[i].pos);
+        // 1) Í³¼Æ¸Ã·¶Î§ÄÚËùÓĞµãµÄ AABB
+        KDNode node;
+        node.box.bmin = pts_[begin].pos;
+        node.box.bmax = pts_[begin].pos;
 
-        constexpr int LEAF_SIZE = 8;
-        if (n <= LEAF_SIZE) {
-            KDNode me;
-            me.box = box;
-            me.is_leaf = true;
-            me.begin = begin;
-            me.end = end;
+        for (int i = begin + 1; i < end; ++i) {
+            for (int d = 0; d < dim; ++d) {
+                const double v = pts_[i].pos[d];
+                if (v < node.box.bmin[d]) node.box.bmin[d] = v;
+                if (v > node.box.bmax[d]) node.box.bmax[d] = v;
+            }
+        }
 
+        // 2) Ò¶×ÓÌõ¼ş£ºµãÊı½ÏÉÙ£¨ÕâÀïÈ¡ 8£¬¿É¸ù¾İĞèÒªµ÷Õû£©
+        constexpr int kLeafSize = 8;
+        if (n <= kLeafSize) {
+            node.is_leaf = true;
+            node.begin = begin;
+            node.end = end;
+            node.left = -1;
+            node.right = -1;
+
+            // Ò¶×Ó mono_block£º¼ì²é¸Ã·¶Î§ÄÚ block_id ÊÇ·ñÈ«ÏàÍ¬
             int blk0 = pts_[begin].block_id;
             bool mono = true;
             for (int i = begin + 1; i < end; ++i) {
-                if (pts_[i].block_id != blk0) { mono = false; break; }
+                if (pts_[i].block_id != blk0) {
+                    mono = false;
+                    break;
+                }
             }
-            me.mono_block = mono ? blk0 : -1;
+            node.mono_block = mono ? blk0 : -1;
 
-            nodes_.push_back(me);
+            nodes_.push_back(node);
             return static_cast<int>(nodes_.size()) - 1;
         }
 
-        // choose axis by max extent
-        int axis = 0; double best_extent = box.bmax[0] - box.bmin[0];
-        for (int d = 1; d < 3; ++d) {
-            double e = box.bmax[d] - box.bmin[d];
-            if (e > best_extent) { best_extent = e; axis = d; }
+        // 3) Ñ¡Ôñ»®·ÖÖá£ºAABB ×î´óÕ¹¿ª·½Ïò
+        int    axis = 0;
+        double best_extent = node.box.bmax[0] - node.box.bmin[0];
+        for (int d = 1; d < dim; ++d) {
+            const double extent = node.box.bmax[d] - node.box.bmin[d];
+            if (extent > best_extent) {
+                best_extent = extent;
+                axis = d;
+            }
         }
 
+        // 4) ÖĞÎ»Êı»®·Ö£¨ÒÔ axis Î¬¶ÈÉÏµÄ×ø±êÎª key£©
         const int mid = begin + n / 2;
         std::nth_element(
             pts_.begin() + begin,
             pts_.begin() + mid,
             pts_.begin() + end,
-            [axis](const MovingPoint& a, const MovingPoint& b){ return a.pos[axis] < b.pos[axis]; }
-        );
+            [axis](const MovingPoint& a, const MovingPoint& b) {
+                return a.pos[axis] < b.pos[axis];
+            });
 
-        const int my = static_cast<int>(nodes_.size());
-        nodes_.push_back(KDNode{}); // placeholder
+        // 5) Õ¼Î»²¢µİ¹é¹¹½¨×óÓÒ×ÓÊ÷
+        const int my_index = static_cast<int>(nodes_.size());
+        nodes_.push_back(KDNode{}); // Õ¼Î»
+        const int left = build_range(begin, mid);
+        const int right = build_range(mid, end);
 
-        const int L = build_range(begin, mid);
-        const int R = build_range(mid, end);
-
-        KDNode me;
+        // 6) Ìî³äÄÚ²¿½ÚµãĞÅÏ¢
+        KDNode& me = nodes_[my_index];
+        me = node;
         me.is_leaf = false;
-        me.left = L; me.right = R;
-        me.axis = axis; me.split = pts_[mid].pos[axis];
-        me.box = box;
+        me.left = left;
+        me.right = right;
+        me.axis = axis;
+        me.split = pts_[mid].pos[axis];
+        me.begin = begin;
+        me.end = end;
 
-        const int monoL = nodes_[L].mono_block;
-        const int monoR = nodes_[R].mono_block;
+        const int monoL = nodes_[left].mono_block;
+        const int monoR = nodes_[right].mono_block;
         me.mono_block = (monoL >= 0 && monoL == monoR) ? monoL : -1;
 
-        nodes_[my] = me;
-        return my;
+        return my_index;
     }
 
-    void nearest_pass1(const Point<double>& q, double& best_d2, int& best_block_id) const {
+    // ----------------------------------------------------------------------------------
+    // Pass1: ±ê×¼ KD-tree ×î½üÁÚËÑË÷£¨Ö»¹ØĞÄ¡°×î½üµã¡±ºÍ¡°Æä block_id¡±£©
+    // Êä³ö£º
+    //   best_d2      : ×î½üµãµÄ¾àÀëÆ½·½
+    //   best_block_id: ×î½üµãËùÊô·ÖÇø id
+    // ----------------------------------------------------------------------------------
+    void nearest_pass1(
+        const Point<double>& q,
+        double& best_d2,
+        int& best_block_id
+    ) const
+    {
         best_d2 = std::numeric_limits<double>::infinity();
         best_block_id = -1;
+
         if (root_ < 0) return;
 
-        struct Item { int node; double lb2; };
-        Item stack[64]; int sp = 0;
-        auto mind2 = [&](int idx){ return nodes_[idx].box.mindist2(q); };
+        struct StackItem {
+            int    node;
+            double lb2;  // ¸Ã½Úµã AABB µ½ q µÄ×îĞ¡¾àÀëÆ½·½
+        };
 
-        stack[sp++] = { root_, mind2(root_) };
+        // ¼òµ¥µÄÊÖĞ´Õ»£¬±ÜÃâµİ¹é
+        StackItem stack[64];
+        int       sp = 0;
+
+        stack[sp++] = { root_, nodes_[root_].box.mindist2(q) };
+
         while (sp > 0) {
-            Item it = stack[--sp];
+            StackItem it = stack[--sp];
+            if (it.lb2 >= best_d2) continue; // AABB ÏÂ½çÒÑ¾­²»¿ÉÄÜ¸üÓÅ£¬¼ôÖ¦
+
             const KDNode& nd = nodes_[it.node];
-            if (it.lb2 >= best_d2) continue;
 
             if (nd.is_leaf) {
                 for (int i = nd.begin; i < nd.end; ++i) {
-                    const auto& mp = pts_[i];
-                    const double d2 = sqdist_pt_pt(mp.pos, q);
-                    if (d2 < best_d2) { best_d2 = d2; best_block_id = mp.block_id; }
+                    const MovingPoint& mp = pts_[i];
+                    const double d2 = squared_distance(mp.pos, q);
+                    if (d2 < best_d2) {
+                        best_d2 = d2;
+                        best_block_id = mp.block_id;
+                    }
                 }
-            } else {
-                const int L = nd.left, R = nd.right;
+            }
+            else {
+                const int L = nd.left;
+                const int R = nd.right;
                 if (L < 0 && R < 0) continue;
-                const double lbL = (L >= 0) ? mind2(L) : std::numeric_limits<double>::infinity();
-                const double lbR = (R >= 0) ? mind2(R) : std::numeric_limits<double>::infinity();
 
+                const double inf = std::numeric_limits<double>::infinity();
+                double lbL = inf, lbR = inf;
+                if (L >= 0) lbL = nodes_[L].box.mindist2(q);
+                if (R >= 0) lbR = nodes_[R].box.mindist2(q);
+
+                // Ñ¹Õ»´ÎĞò£ºÏÈÑ¹¡°Ô¶¡±µÄ£¬ÔÙÑ¹¡°½ü¡±µÄ£¬ÕâÑùÏÂ´ÎÑ­»·ÏÈ´¦Àí¸ü½üµÄ£¬¼ôÖ¦Ğ§¹û¸üºÃ
                 if (L >= 0 && lbL < best_d2) {
                     if (R >= 0 && lbR < best_d2) {
-                        if (lbL < lbR) { stack[sp++] = { R, lbR }; stack[sp++] = { L, lbL }; }
-                        else            { stack[sp++] = { L, lbL }; stack[sp++] = { R, lbR }; }
-                    } else {
+                        if (lbL < lbR) {
+                            stack[sp++] = { R, lbR };
+                            stack[sp++] = { L, lbL };
+                        }
+                        else {
+                            stack[sp++] = { L, lbL };
+                            stack[sp++] = { R, lbR };
+                        }
+                    }
+                    else {
                         stack[sp++] = { L, lbL };
                     }
-                } else if (R >= 0 && lbR < best_d2) {
+                }
+                else if (R >= 0 && lbR < best_d2) {
                     stack[sp++] = { R, lbR };
                 }
             }
         }
     }
 
-    void nearest_pass2_other(const Point<double>& q, int b1, double& best_other_d2, double& best_d2) const {
+    // ----------------------------------------------------------------------------------
+    // Pass2: ÔÚÒÑÖª×î½ü·ÖÇø b1 µÄÌõ¼şÏÂ£¬Ö»ÔÚÆäËü·ÖÇøÖĞÑ°ÕÒ×î½ü¾àÀë
+    //
+    // ÊäÈë£º
+    //   b1              : ×î½üµãËùÊô·ÖÇø id
+    //   best_d2 (inout) : d2^2 µÄµ±Ç°ÉÏ½ç¡£³õÊ¼Îª du^2£¬ËÑË÷ÖĞÈôÕÒµ½¸üĞ¡µÄ
+    //                     ÆäËü·ÖÇø¾àÀëÔò½øÒ»²½ÊÕ½ô£¨ÓÃÓÚ¼ôÖ¦£©¡£
+    //
+    // Êä³ö£º
+    //   best_other_d2   : À´×Ô¡°ÆäËü·ÖÇø¡±µÄ×î½ü¾àÀëÆ½·½£¨Èô²»´æÔÚ£¬ÔòÎª inf£©
+    // ----------------------------------------------------------------------------------
+    void nearest_pass2_other(
+        const Point<double>& q,
+        int    b1,
+        double& best_other_d2,
+        double& best_d2
+    ) const
+    {
         best_other_d2 = std::numeric_limits<double>::infinity();
         if (root_ < 0) return;
 
-        struct Item { int node; double lb2; };
-        Item stack[64]; int sp = 0;
-        auto mind2 = [&](int idx){ return nodes_[idx].box.mindist2(q); };
+        struct StackItem {
+            int    node;
+            double lb2;
+        };
 
-        stack[sp++] = { root_, mind2(root_) };
+        StackItem stack[64];
+        int       sp = 0;
+
+        stack[sp++] = { root_, nodes_[root_].box.mindist2(q) };
+
         while (sp > 0) {
-            Item it = stack[--sp];
+            StackItem it = stack[--sp];
             const KDNode& nd = nodes_[it.node];
-            if (it.lb2 >= best_d2) continue;         // å‰ªæ 1ï¼šä¸‹ç•Œ
-            if (nd.mono_block == b1) continue;       // å‰ªæ 2ï¼šæ•´æ£µå­æ ‘ä¸ºæœ€è¿‘åˆ†åŒº
+
+            // ¼ôÖ¦ 1: ¸Ã×ÓÊ÷ AABB ÏÂ½çÒÑ¾­²»¿ÉÄÜ¸ÄÉÆµ±Ç° best_d2
+            if (it.lb2 >= best_d2) continue;
+
+            // ¼ôÖ¦ 2: Õû¿Ã×ÓÊ÷µÄµã¶¼ÊôÓÚ×î½ü·ÖÇø b1
+            if (nd.mono_block == b1) continue;
 
             if (nd.is_leaf) {
                 for (int i = nd.begin; i < nd.end; ++i) {
-                    const auto& mp = pts_[i];
-                    if (mp.block_id == b1) continue;
-                    const double d2 = sqdist_pt_pt(mp.pos, q);
+                    const MovingPoint& mp = pts_[i];
+                    if (mp.block_id == b1) continue; // ÅÅ³ı×î½ü·ÖÇø±¾Éí
+
+                    const double d2 = squared_distance(mp.pos, q);
                     if (d2 < best_other_d2) {
                         best_other_d2 = d2;
-                        if (d2 < best_d2) best_d2 = d2;
+                        if (d2 < best_d2) best_d2 = d2; // d2^2 ÉÏ½çÊÕ½ô
                     }
                 }
-            } else {
-                const int L = nd.left, R = nd.right;
+            }
+            else {
+                const int L = nd.left;
+                const int R = nd.right;
                 if (L < 0 && R < 0) continue;
-                const double lbL = (L >= 0) ? mind2(L) : std::numeric_limits<double>::infinity();
-                const double lbR = (R >= 0) ? mind2(R) : std::numeric_limits<double>::infinity();
+
+                const double inf = std::numeric_limits<double>::infinity();
+                double lbL = inf, lbR = inf;
+                if (L >= 0) lbL = nodes_[L].box.mindist2(q);
+                if (R >= 0) lbR = nodes_[R].box.mindist2(q);
 
                 if (L >= 0 && lbL < best_d2) {
                     if (R >= 0 && lbR < best_d2) {
-                        if (lbL < lbR) { stack[sp++] = { R, lbR }; stack[sp++] = { L, lbL }; }
-                        else            { stack[sp++] = { L, lbL }; stack[sp++] = { R, lbR }; }
-                    } else {
+                        if (lbL < lbR) {
+                            stack[sp++] = { R, lbR };
+                            stack[sp++] = { L, lbL };
+                        }
+                        else {
+                            stack[sp++] = { L, lbL };
+                            stack[sp++] = { R, lbR };
+                        }
+                    }
+                    else {
                         stack[sp++] = { L, lbL };
                     }
-                } else if (R >= 0 && lbR < best_d2) {
+                }
+                else if (R >= 0 && lbR < best_d2) {
                     stack[sp++] = { R, lbR };
                 }
             }
         }
     }
 };
-

@@ -11,7 +11,11 @@
 #include "rbf.hpp"            // RBFInterpolator / DeformCalculator / free set_block_rbf(...)
 #include "metis_block.hpp"
 #include "State.hpp"
-#include "global_kdtree.hpp"
+#include "partition_bvh.hpp"
+#include "partition_inn.hpp"    // INN searching Algorithm
+#include "meshio.hpp"
+#include "global_kdtree.hpp"  // 全局kd-tree
+#include <filesystem>    // write mesh
 
 // 多级 METIS 分区 + 分组 RBF 主控类
 class multi_partition {
@@ -69,6 +73,8 @@ public:
     struct BlockStat
     {
         int block_id = -1;
+        size_t internal_points = 0;
+        size_t boundary_points = 0;
         size_t candidate_points = 0;
         size_t support_points = 0;
         double block_D = 0.0;
@@ -93,7 +99,6 @@ private:
     std::unordered_set<int> global_unique_bndry_set_;
     std::vector<int>        global_unique_bndry_id_;
     GridBTree<int, Point<double>> unique_bndry_tree_;
-    std::vector<GlobalKDTree> global_kdtree_per_level_; // 全局KD树（每层一棵）
 
     // wall id <-> index
     std::unordered_map<int, int> wall_id2nodes_;
@@ -107,7 +112,13 @@ private:
     std::vector<LevelTiming> level_timings_;
     std::vector<LevelStatistics> level_statistics_;
 
+    // BVH外层树叶子数组，用于初始化BVH
+    std::vector<PartitionBVH> bvh_per_level_;
 
+    // 每个 level 对应一棵“全局动边界 KD 树”
+    //  - lvl == 0: 不使用此结构；
+    //  - lvl >= 1: 由该层所有 mesh_block 的 block_tree 采样点构建。
+    std::vector<GlobalKDTree> global_kdtree_per_level_;
 
 private:
     // ===== 内部工具 =====
@@ -149,8 +160,6 @@ private:
     void set_unique_bndry_tree(size_t lvl,
                                GridBTree<int, Point<double>>& tree,
                                const std::vector<Node>& all_nodes);
-    // 为每个层级构建全局 KDTree（动边界内部点），用于 d1/d2 查询
-    std::size_t build_global_kdtree_for_level(std::size_t lvl);
 
     // 收集前一层的 unique 边界节点 id（去重）
     static void collect_unique_bndry_nodes(
@@ -169,12 +178,27 @@ private:
                                   double& i_d_r2omega1,
                                   double& i_d_r2omega2) const;
 
-    // 使用全局 KDTree 查询 d1/d2
-    void find_moving_and_static_bndry_with_kdtree(const Node& ind,
-                                   int& i_id,
-                                   double& i_d_r2omega1,
-                                   double& i_d_r2omega2,
-                                   std::size_t lvl) const;
+    // 查询某个点到“动边界”和“静边界”的距离，使用BVH构建外层树加速搜索
+    void find_moving_and_static_bndry_with_bvh(const Node& ind,
+                                               const std::vector<mesh_block>& blocks,
+                                               int& i_id,
+                                               double& i_d_r2omega1,
+                                               double& i_d_r2omega2,
+                                               std::size_t lvl) const;
 
+    // 构建某一层分区的BVH外层树，返回构建的leaf数量
+    std::size_t build_bvh_for_level(std::size_t lvl);
 
+    // 为某一层级构建全局 KD 树
+    std::size_t build_global_kdtree_for_level(std::size_t lvl);
+
+    // 使用全局 KD 树查询“动/静边界距离”
+    void find_moving_and_static_bndry_with_kdtree(
+        const Node& ind,
+        int& i_id,
+        double& i_d_r2omega1,
+        double& i_d_r2omega2,
+        std::size_t lvl
+    ) const;
 };
+

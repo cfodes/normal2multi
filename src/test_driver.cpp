@@ -81,6 +81,8 @@ void TestDriver::run_multi_partition()
             bs.candidate_points = st.candidate_points;
             bs.support_points = st.support_points;
             bs.block_D = st.block_D;
+            bs.internal_nodes = st.internal_points;
+            bs.boundary_nodes = st.boundary_points;
             summaries.push_back(std::move(bs));
         }
     }
@@ -145,25 +147,26 @@ void TestDriver::write_info_report(const std::filesystem::path& info_path) const
 
     for (size_t lvl = 0; lvl < level_statistics_.size(); ++lvl) {
         ofs << "level " << lvl << '\n';
-        // 分块明细（四列）
         ofs << "blocks\n";
-        ofs << "# block_id candidate_p support_p block_D\n";
+        ofs << "# block_id candidate_p support_p internal_nodes boundary_nodes block_D\n"; // 新增列头
+
         if (lvl < block_summaries_.size()) {
             const auto& summaries = block_summaries_[lvl];
             for (const auto& blk : summaries) {
                 double block_D_value = blk.block_D;
                 if (lvl == 0) {
-                    block_D_value = initial_D_; // 与原有语义一致
+                    block_D_value = initial_D_;
                 }
+
                 ofs << "  "
                     << blk.block_id << ' '
                     << blk.candidate_points << ' '
                     << blk.support_points << ' '
+                    << blk.internal_nodes << ' '   // 输出 internal_nodes
+                    << blk.boundary_nodes << ' '   // 输出 boundary_nodes
                     << block_D_value << '\n';
             }
         }
-
         ofs << '\n';
     }
 }
-

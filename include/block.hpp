@@ -19,6 +19,9 @@ public:
     std::vector<Node> boundary_nodes;       // 边界节点：位于多个分块之间共享的节点
     std::unordered_set<int> bndry_nds_id;   //用以查找边界节点id的set 
     GridBTree<int, Point<double>> block_tree;   //根据内部节点构造的二叉树
+    Point<double> aabb_min;         // block_tree的包围盒最小值，外层树构建所需
+    Point<double> aabb_max;         // block_tree的包围盒最小值，外层树构建所需
+    bool has_aabb = false;          // 用于判断block_tree是否为空
 
     // 默认构造函数
     mesh_block() = default;
@@ -29,7 +32,7 @@ public:
     // 计算网格内部节点的待变形量 = 已知变形量 - 已变形的量（针对wall_nodes已经更新的情况
     void set_blk_nodes_df(const std::vector<Node>& wall_prev, const std::unordered_map<int, int>& id2node);
 
-    // 内部节点建立后，构建内部节点的二叉树
+    // 内部节点建立后，构建内部节点的二叉树，同时缓存AABB
     void set_block_tree();
 };
 

@@ -171,6 +171,16 @@ class GridBTree : private BTree<Block<_PTTy> >
              {
                  return m_grids[id].first;
              }
+    public :
+        // return box(min/max) of root (if tree is empty, this function return false)
+        bool root_bound(_PTTy& out_min, _PTTy& out_max) const
+        {
+            if (this->empty()) return false;
+            const auto& r = *(this->root());
+            out_min = r.elem().min();
+            out_max = r.elem().max();
+            return true;
+        }
 
     private:
 
