@@ -11,6 +11,7 @@
 #include "rbf.hpp"            // RBFInterpolator / DeformCalculator / free set_block_rbf(...)
 #include "metis_block.hpp"
 #include "State.hpp"
+#include "global_kdtree.hpp"
 
 // 多级 METIS 分区 + 分组 RBF 主控类
 class multi_partition {
@@ -92,6 +93,7 @@ private:
     std::unordered_set<int> global_unique_bndry_set_;
     std::vector<int>        global_unique_bndry_id_;
     GridBTree<int, Point<double>> unique_bndry_tree_;
+    std::vector<GlobalKDTree> global_kdtree_per_level_; // 全局KD树（每层一棵）
 
     // wall id <-> index
     std::unordered_map<int, int> wall_id2nodes_;
@@ -147,6 +149,8 @@ private:
     void set_unique_bndry_tree(size_t lvl,
                                GridBTree<int, Point<double>>& tree,
                                const std::vector<Node>& all_nodes);
+    // 为每个层级构建全局 KDTree（动边界内部点），用于 d1/d2 查询
+    std::size_t build_global_kdtree_for_level(std::size_t lvl);
 
     // 收集前一层的 unique 边界节点 id（去重）
     static void collect_unique_bndry_nodes(
@@ -165,6 +169,12 @@ private:
                                   double& i_d_r2omega1,
                                   double& i_d_r2omega2) const;
 
+    // 使用全局 KDTree 查询 d1/d2
+    void find_moving_and_static_bndry_with_kdtree(const Node& ind,
+                                   int& i_id,
+                                   double& i_d_r2omega1,
+                                   double& i_d_r2omega2,
+                                   std::size_t lvl) const;
+
 
 };
-

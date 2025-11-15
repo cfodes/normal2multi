@@ -137,6 +137,7 @@ void multi_partition::multi_partition_rbf_algorithm(
 
   level_timings_.assign(levels_, LevelTiming{});
   level_statistics_.assign(levels_, LevelStatistics{});
+  global_kdtree_per_level_.assign(levels_, GlobalKDTree{});
 
   set_wall_id2nodes(wall_id2nodes_, wall_nodes); // 构建物面的索引和id的查找集
   std::vector<Node> wall_accurate = set_accurate_wall(
@@ -161,6 +162,9 @@ void multi_partition::multi_partition_rbf_algorithm(
       set_blocks_df_and_tree(wall_prev, static_cast<int>(lvl));
       // 建立“历史 unique 边界”的 kd-tree（静边界距离要用）
       set_unique_bndry_tree(lvl, unique_bndry_tree_, all_nodes_coords);
+
+      // 构建全局 KDTree（本层所有动边界内部点）
+      build_global_kdtree_for_level(lvl);
 
       //预处理计时结束
       const auto t_pre_end = high_resolution_clock::now();
@@ -449,13 +453,24 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     tasks.reserve(coords.size());
 
     const auto t_search_start = high_resolution_clock::now();
+    // 开关：使用全局 KDTree 实现 d1/d2 查询（测试用）
+    constexpr bool kUseGlobalKDTree = true;
+
     for (auto& inode : coords) {
         NodeTask task;
         task.node = &inode;
 
-        // --- 查找动边界和静边界 ---
-        find_moving_and_static_bndry(inode, blks,
-                                     task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);   //查找最近的动边界和静边界
+        if (kUseGlobalKDTree) {
+            // --- 查找动边界和静边界（使用全局 KDTree 方法） ---
+            find_moving_and_static_bndry_with_kdtree(
+                inode,
+                task.moving_blk_id, task.d_r2omega1, task.d_r2omega2,
+                lvl);
+        } else {
+            // 旧方法：逐块 kd-tree 搜索
+            find_moving_and_static_bndry(inode, blks,
+                                         task.moving_blk_id, task.d_r2omega1, task.d_r2omega2);
+        }
 
         // --- 历史 unique_bndry 节点不再变形 ---
         if (global_unique_bndry_set_.find(inode.id) != global_unique_bndry_set_.end()) {
@@ -511,6 +526,55 @@ void multi_partition::set_unique_bndry_tree(size_t lvl,
         tree.setGrid(i, id, all_nodes[id].point);   //将点放入二叉树内
     }
     tree.construct();
+}
+
+// ===== 构建全局 KDTree（每层一棵） =====
+std::size_t multi_partition::build_global_kdtree_for_level(std::size_t lvl)
+{
+    if (global_kdtree_per_level_.size() < levels_) {
+        global_kdtree_per_level_.resize(levels_);
+    }
+    const auto& blks = blocks_per_level_.at(lvl);
+    global_kdtree_per_level_[lvl].build_from_blocks(blks);
+    // 返回点数可选，这里简单返回当前层的内部点数总和
+    std::size_t total = 0;
+    for (const auto& b : blks) total += b.internal_nodes.size();
+    return total;
+}
+
+// ===== 使用全局 KDTree 查询 d1/d2 =====
+void multi_partition::find_moving_and_static_bndry_with_kdtree(
+    const Node& ind,
+    int& i_id,
+    double& i_d_r2omega1,
+    double& i_d_r2omega2,
+    std::size_t lvl) const
+{
+    if (lvl >= global_kdtree_per_level_.size() || global_kdtree_per_level_[lvl].empty()) {
+        throw std::runtime_error("find_moving_and_static_bndry_with_kdtree: KDTree not available at level " + std::to_string(lvl));
+    }
+
+    // Pass 0: 预先计算 unique 边界距离平方 du^2（如无则 +inf）
+    double du2 = std::numeric_limits<double>::infinity();
+    if (!global_unique_bndry_id_.empty()) {
+        int dummy_key = 0;
+        double du = std::numeric_limits<double>::infinity();
+        unique_bndry_tree_.search(du, dummy_key, ind.point);
+        du2 = du * du;
+    }
+
+    double d1 = 0.0, d2 = 0.0, d_other = 0.0, d_u = 0.0;
+    int moving_block_id = -1;
+    global_kdtree_per_level_[lvl].query_point(
+        ind.point,
+        du2,
+        d1, moving_block_id,
+        d2, d_other, d_u
+    );
+
+    i_id = moving_block_id;
+    i_d_r2omega1 = d1;
+    i_d_r2omega2 = d2;
 }
 
 void multi_partition::collect_unique_bndry_nodes(
