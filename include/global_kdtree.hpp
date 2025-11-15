@@ -188,6 +188,48 @@ public:
         d2 = std::sqrt(d2_sq);
     }
 
+    bool has_neighbor_within_radius(const Point<double>& q, double radius) const {
+        if (radius <= 0.0 || root_ < 0) {
+            return false;
+        }
+        const double radius2 = radius * radius;
+        struct Item { int node; double lb2; };
+        Item stack[64];
+        int sp = 0;
+        auto mind2 = [&](int idx){ return nodes_[idx].box.mindist2(q); };
+
+        stack[sp++] = { root_, mind2(root_) };
+        while (sp > 0) {
+            Item it = stack[--sp];
+            if (it.lb2 > radius2) continue;
+            const KDNode& nd = nodes_[it.node];
+            if (nd.is_leaf) {
+                for (int i = nd.begin; i < nd.end; ++i) {
+                    const auto& mp = pts_[i];
+                    const double d2 = squared_distance(mp.pos, q);
+                    if (d2 < radius2) {
+                        return true;
+                    }
+                }
+            } else {
+                const int L = nd.left, R = nd.right;
+                if (L >= 0) {
+                    const double lbL = mind2(L);
+                    if (lbL <= radius2) {
+                        stack[sp++] = { L, lbL };
+                    }
+                }
+                if (R >= 0) {
+                    const double lbR = mind2(R);
+                    if (lbR <= radius2) {
+                        stack[sp++] = { R, lbR };
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
 private:
     int                   root_;
     std::vector<KDNode>   nodes_;
