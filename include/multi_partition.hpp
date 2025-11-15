@@ -14,6 +14,7 @@
 #include "partition_bvh.hpp"
 #include "partition_inn.hpp"    // INN searching Algorithm
 #include "meshio.hpp"
+#include "global_kdtree.hpp"  // 全局kd-tree
 #include <filesystem>    // write mesh
 
 // 多级 METIS 分区 + 分组 RBF 主控类
@@ -114,6 +115,11 @@ private:
     // BVH外层树叶子数组，用于初始化BVH
     std::vector<PartitionBVH> bvh_per_level_;
 
+    // 每个 level 对应一棵“全局动边界 KD 树”
+    //  - lvl == 0: 不使用此结构；
+    //  - lvl >= 1: 由该层所有 mesh_block 的 block_tree 采样点构建。
+    std::vector<GlobalKDTree> global_kdtree_per_level_;
+
 private:
     // ===== 内部工具 =====
     static void set_blk_id(std::vector<mesh_block>& blks);
@@ -182,5 +188,17 @@ private:
 
     // 构建某一层分区的BVH外层树，返回构建的leaf数量
     std::size_t build_bvh_for_level(std::size_t lvl);
+
+    // 为某一层级构建全局 KD 树
+    std::size_t build_global_kdtree_for_level(std::size_t lvl);
+
+    // 使用全局 KD 树查询“动/静边界距离”
+    void find_moving_and_static_bndry_with_kdtree(
+        const Node& ind,
+        int& i_id,
+        double& i_d_r2omega1,
+        double& i_d_r2omega2,
+        std::size_t lvl
+    ) const;
 };
 
