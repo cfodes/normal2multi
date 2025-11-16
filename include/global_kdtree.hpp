@@ -334,9 +334,9 @@ private:
                 }
             }
             node.mono_block = mono ? blk0 : -1;
-            node.min_block_D = std::numeric_limits<double>::infinity();
+            node.min_block_D = 0.0;
             for (int i = begin; i < end; ++i) {
-                node.min_block_D = std::min(node.min_block_D, pts_[i].block_D);
+                node.min_block_D = std::max(node.min_block_D, pts_[i].block_D);
             }
 
             nodes_.push_back(node);
@@ -386,7 +386,7 @@ private:
         me.mono_block = (monoL >= 0 && monoL == monoR) ? monoL : -1;
 
         // subtree min block_D for gating
-        me.min_block_D = std::min(nodes_[left].min_block_D, nodes_[right].min_block_D);
+        me.min_block_D = std::max(nodes_[left].min_block_D, nodes_[right].min_block_D);
 
         return my_index;
     }
