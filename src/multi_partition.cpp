@@ -466,8 +466,10 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     tasks.reserve(coords.size());
 
     constexpr bool kUseGlobalKDTree = true; // 使用全局KD树开关
+    constexpr bool kEnableDmPrefilter = false; // 关闭 Dm 预筛以统计全量 d1/d2
     const double Dm = (lvl < max_block_D_per_level_.size()) ? max_block_D_per_level_[lvl] : 0.0;
-    const bool enable_prefilter = (lvl > 0) && (Dm > 0.0) &&
+    const bool enable_prefilter = kEnableDmPrefilter &&
+        (lvl > 0) && (Dm > 0.0) &&
         (lvl < global_kdtree_per_level_.size()) &&
         !global_kdtree_per_level_[lvl].empty();
 
