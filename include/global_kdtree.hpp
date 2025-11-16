@@ -101,7 +101,8 @@ public:
                 MovingPoint mp;
                 mp.pos = b.block_tree.grid(i); // 真实采样点坐标
                 mp.block_id = b.block_id;
-                mp.node_id = b.block_tree.key(i);   // 全局节点 id（可选）
+                mp.node_id = b.block_tree.key(i);   // id
+                mp.block_D = b.block_D;
                 pts_.push_back(std::move(mp));
             }
         }
