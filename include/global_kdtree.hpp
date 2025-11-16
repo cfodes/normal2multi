@@ -384,6 +384,9 @@ private:
         const int monoR = nodes_[right].mono_block;
         me.mono_block = (monoL >= 0 && monoL == monoR) ? monoL : -1;
 
+        // subtree min block_D for gating
+        me.min_block_D = std::min(nodes_[left].min_block_D, nodes_[right].min_block_D);
+
         return my_index;
     }
 
