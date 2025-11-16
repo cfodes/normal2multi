@@ -471,6 +471,11 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
         (lvl < global_kdtree_per_level_.size()) &&
         !global_kdtree_per_level_[lvl].empty();
 
+    // 统计信息：预筛跳过 / 唯一边界跳过 / 进入精确搜索的点数
+    std::size_t cnt_skip_unique = 0;
+    std::size_t cnt_skip_prefilter = 0;
+    std::size_t cnt_stageB = 0; // 实际计算了 d1/d2 的点
+
     const auto t_search_start = high_resolution_clock::now();
     for (auto& inode : coords) {
         NodeTask task;
@@ -481,6 +486,7 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
             inode.df.setZero();
             task.skip = true;
             tasks.push_back(task);
+            ++cnt_skip_unique;
             continue;
         }
 
@@ -489,6 +495,7 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
                 inode.df.setZero();
                 task.skip = true;
                 tasks.push_back(task);
+                ++cnt_skip_prefilter;
                 continue;
             }
         }
@@ -509,6 +516,7 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
         }
 
         tasks.push_back(task);
+        ++cnt_stageB;
     }
     const auto t_search_end = high_resolution_clock::now();
     const double search_ms =
@@ -516,6 +524,15 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     level_timings_[lvl].distance_search_ms = search_ms;
     std::cout << "[lvl=" << lvl << "] DRRBF distance search time: "
         << search_ms << " ms\n";
+
+    const std::size_t total_pts = coords.size();
+    const std::size_t skipped = cnt_skip_unique + cnt_skip_prefilter;
+    std::cout << "[lvl=" << lvl << "] distance search stats: total=" << total_pts
+              << " skip_unique=" << cnt_skip_unique
+              << " skip_prefilter=" << cnt_skip_prefilter
+              << " stageB(d1/d2)=" << cnt_stageB
+              << " remained=" << (total_pts - skipped) - cnt_stageB
+              << "\n";
 
     const auto t_deform_start = high_resolution_clock::now();
     for (auto& task : tasks) {
