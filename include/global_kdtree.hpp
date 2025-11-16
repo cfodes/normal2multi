@@ -19,6 +19,7 @@ struct MovingPoint
     Point<double> pos{};
     int           block_id = -1;
     int           node_id = -1;
+    double        block_D = 0.0;
 };
 
 /// --------------------------------------------------------------------------------------
@@ -44,6 +45,7 @@ struct KDNode
 
     int  mono_block = -1;
     bool is_leaf = false;
+    double min_block_D = std::numeric_limits<double>::infinity();
 };
 
 /// --------------------------------------------------------------------------------------
@@ -188,6 +190,46 @@ public:
         d2 = std::sqrt(d2_sq);
     }
 
+    bool has_neighbor_within_blockD(const Point<double>& q) const {
+        if (root_ < 0) return false;
+        struct Item { int node; double lb2; };
+        Item stack[64]; int sp = 0;
+        auto mind2 = [&](int idx){ return nodes_[idx].box.mindist2(q); };
+
+        stack[sp++] = { root_, mind2(root_) };
+        while (sp > 0) {
+            Item it = stack[--sp];
+            const KDNode& nd = nodes_[it.node];
+            const double thr2 = nd.min_block_D * nd.min_block_D;
+            if (it.lb2 > thr2) continue;
+
+            if (nd.is_leaf) {
+                for (int i = nd.begin; i < nd.end; ++i) {
+                    const auto& mp = pts_[i];
+                    const double r2 = mp.block_D * mp.block_D;
+                    if (r2 <= 0.0) continue;
+                    const double d2 = squared_distance(mp.pos, q);
+                    if (d2 < r2) return true;
+                }
+            } else {
+                const int L = nd.left, R = nd.right;
+                if (L >= 0) {
+                    const double lbL = mind2(L);
+                    if (lbL <= nodes_[L].min_block_D * nodes_[L].min_block_D) {
+                        stack[sp++] = { L, lbL };
+                    }
+                }
+                if (R >= 0) {
+                    const double lbR = mind2(R);
+                    if (lbR <= nodes_[R].min_block_D * nodes_[R].min_block_D) {
+                        stack[sp++] = { R, lbR };
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     bool has_neighbor_within_radius(const Point<double>& q, double radius) const {
         if (radius <= 0.0 || root_ < 0) {
             return false;
@@ -291,6 +333,10 @@ private:
                 }
             }
             node.mono_block = mono ? blk0 : -1;
+            node.min_block_D = std::numeric_limits<double>::infinity();
+            for (int i = begin; i < end; ++i) {
+                node.min_block_D = std::min(node.min_block_D, pts_[i].block_D);
+            }
 
             nodes_.push_back(node);
             return static_cast<int>(nodes_.size()) - 1;

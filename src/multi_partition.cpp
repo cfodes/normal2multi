@@ -466,17 +466,18 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
     tasks.reserve(coords.size());
 
     constexpr bool kUseGlobalKDTree = true; // 使用全局KD树开关
-    constexpr bool kEnableDmPrefilter = false; // 关闭 Dm 预筛以统计全量 d1/d2
-    const double Dm = (lvl < max_block_D_per_level_.size()) ? max_block_D_per_level_[lvl] : 0.0;
-    const bool enable_prefilter = kEnableDmPrefilter &&
-        (lvl > 0) && (Dm > 0.0) &&
+    constexpr bool kEnablePrefilter = true; // 启用基于 block_D 的预筛
+    const bool enable_prefilter = kEnablePrefilter &&
+        (lvl > 0) &&
         (lvl < global_kdtree_per_level_.size()) &&
         !global_kdtree_per_level_[lvl].empty();
 
     // 统计信息：预筛跳过 / 唯一边界跳过 / 进入精确搜索的点数
     std::size_t cnt_skip_unique = 0;
     std::size_t cnt_skip_prefilter = 0;
-    std::size_t cnt_stageB = 0; // 实际计算了 d1/d2 的点
+    std::size_t cnt_stageB = 0;           // 实际计算了 d1/d2 的点
+    std::size_t cnt_stageB_d1_lt_D = 0;   // d1 < 对应块 block_D 的点
+    std::size_t cnt_stageB_d1_ge_D = 0;   // d1 >= 对应块 block_D 的点
 
     const auto t_search_start = high_resolution_clock::now();
     for (auto& inode : coords) {
@@ -493,7 +494,8 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
         }
 
         if (enable_prefilter) {
-            if (!drrbf::has_neighbor_within_Dm(global_kdtree_per_level_[lvl], inode.point, Dm)) {
+            // 使用节点最小 block_D 预筛：不存在 dist < block_D 的 moving 点则跳过
+            if (!global_kdtree_per_level_[lvl].has_neighbor_within_blockD(inode.point)) {
                 inode.df.setZero();
                 task.skip = true;
                 tasks.push_back(task);
@@ -519,6 +521,16 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
 
         tasks.push_back(task);
         ++cnt_stageB;
+
+        // 统计 d1 与对应块 D 的关系（有效计算标志）
+        if (task.moving_blk_id >= 0 && task.moving_blk_id < static_cast<int>(blks.size())) {
+            const double blkD = blks[task.moving_blk_id].block_D;
+            if (task.d_r2omega1 < blkD) {
+                ++cnt_stageB_d1_lt_D;
+            } else {
+                ++cnt_stageB_d1_ge_D;
+            }
+        }
     }
     const auto t_search_end = high_resolution_clock::now();
     const double search_ms =
@@ -534,6 +546,8 @@ void multi_partition::apply_drrbf_deformation(std::vector<Node>& coords,
               << " skip_prefilter=" << cnt_skip_prefilter
               << " stageB(d1/d2)=" << cnt_stageB
               << " remained=" << (total_pts - skipped) - cnt_stageB
+              << " d1<blockD=" << cnt_stageB_d1_lt_D
+              << " d1>=blockD=" << cnt_stageB_d1_ge_D
               << "\n";
 
     const auto t_deform_start = high_resolution_clock::now();
